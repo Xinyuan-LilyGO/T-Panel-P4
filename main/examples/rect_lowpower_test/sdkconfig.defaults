@@ -1,0 +1,15 @@
+CONFIG_IDF_TARGET="esp32p4"
+# esp_audio_effects 1.4+ requires ESP32-P4 revision 3.0 or newer.
+# Keep this test profile aligned with the audio dependency set used by the
+# project instead of selecting the pre-v3.0 silicon configuration.
+# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set
+
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+# CONFIG_ESP32P4_REV_MIN_301=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_PDL_LOG_ENABLE=y
+CONFIG_PDL_LOG_LEVEL_INFO=y

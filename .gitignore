@@ -1,0 +1,14 @@
+/build/
+/.agents/
+/.cache/
+/.codex/
+/.devcontainer/
+.clangd
+.gitgnore
+managed_components
+image/rect-屏幕背光关闭.png
+image/rect-屏幕触摸睡眠.png
+image/rect-屏幕睡眠.png
+doc/HD0549S001/
+doc/HD40016C31/
+doc/HD50068C30/

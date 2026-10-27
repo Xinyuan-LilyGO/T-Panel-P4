@@ -1,0 +1,12 @@
+menu "Factory standard display"
+
+config FACTORY_STANDARD_LCD_USE_TE
+    bool "Synchronize framebuffer submission with external LCD TE"
+    default n
+    help
+        Enable the JD9365 tearing-effect GPIO as an optional submission gate.
+        The DSI Bridge VSYNC callback remains enabled and is still used to
+        release LVGL after the submitted frame is consumed. If the TE signal
+        is absent, the display path falls back after one frame period.
+
+endmenu

@@ -1,0 +1,4 @@
+# ESP-Hosted 2.12.9+ uses this parser-time macro for an IDF 6.1-only
+# SPI-HD option. ESP-IDF 5.5 provides IDF_VERSION to kconfgen but does not
+# define the make-style macro consumed by that component.
+ESP_IDF_VERSION = 5.5

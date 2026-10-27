@@ -1,0 +1,137 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ESP-IDF: Build example",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$idfRoot = '${config:idf.espIdfPathWin}'; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { $idfRoot = $env:IDF_PATH }; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { throw 'ESP-IDF is not configured. Run ESP-IDF: Configure ESP-IDF extension first.' }; . (Join-Path $idfRoot 'export.ps1'); & '${workspaceFolder}\\build.ps1' -HardwareVersion '${input:hardware}' -Example '${input:example}' -Action 'build'"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ESP-IDF: Flash example",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$idfRoot = '${config:idf.espIdfPathWin}'; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { $idfRoot = $env:IDF_PATH }; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { throw 'ESP-IDF is not configured. Run ESP-IDF: Configure ESP-IDF extension first.' }; . (Join-Path $idfRoot 'export.ps1'); & '${workspaceFolder}\\build.ps1' -HardwareVersion '${input:hardware}' -Example '${input:example}' -Action 'flash' -Port '${input:port}'"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ESP-IDF: Flash and monitor example",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$idfRoot = '${config:idf.espIdfPathWin}'; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { $idfRoot = $env:IDF_PATH }; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { throw 'ESP-IDF is not configured. Run ESP-IDF: Configure ESP-IDF extension first.' }; . (Join-Path $idfRoot 'export.ps1'); & '${workspaceFolder}\\build.ps1' -HardwareVersion '${input:hardware}' -Example '${input:example}' -Action 'flash-monitor' -Port '${input:port}'"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "ESP-IDF: Menuconfig example",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$idfRoot = '${config:idf.espIdfPathWin}'; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { $idfRoot = $env:IDF_PATH }; if ([string]::IsNullOrWhiteSpace($idfRoot) -or -not (Test-Path -LiteralPath (Join-Path $idfRoot 'export.ps1'))) { throw 'ESP-IDF is not configured. Run ESP-IDF: Configure ESP-IDF extension first.' }; . (Join-Path $idfRoot 'export.ps1'); & '${workspaceFolder}\\build.ps1' -HardwareVersion '${input:hardware}' -Example '${input:example}' -Action 'menuconfig'"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": false
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "hardware",
+      "type": "pickString",
+      "description": "Select the hardware version",
+      "options": [
+        "standard",
+        "rect",
+        "round"
+      ],
+      "default": "standard"
+    },
+    {
+      "id": "example",
+      "type": "pickString",
+      "description": "Select the example to use",
+      "options": [
+        "factory_standard",
+        "axp517",
+        "xl9555",
+        "lcd/jd9365",
+        "lcd/ili9882",
+        "touch/jadard",
+        "lr2021",
+        "sd",
+        "camera",
+        "rect_lowpower_test",
+        "sdio_esp32c5",
+        "usb_msc",
+        "audio/loopback",
+        "audio/play_wav",
+        "audio/play_sd_mp3",
+        "lvgl_lcd_touch",
+        "lvgl_fps_test"
+      ],
+      "default": "factory_standard"
+    },
+    {
+      "id": "port",
+      "type": "promptString",
+      "description": "Serial port, for example COM7",
+      "default": "COM7"
+    }
+  ]
+}

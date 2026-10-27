@@ -1,0 +1,21 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.openOcdConfigs": [
+    "board/esp32p4-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32p4",
+    "IDF_COMPONENT_MANAGER": "1"
+  },
+  "idf.buildPath": "${workspaceFolder}/build/standard-factory_standard",
+  "idf.buildPathWin": "${workspaceFolder}\\build\\standard-factory_standard",
+  "idf.cmakeCompilerArgs": [
+    "-G",
+    "Ninja",
+    "-DPYTHON_DEPS_CHECKED=1",
+    "-DESP_PLATFORM=1",
+    "-DT_PANEL_P4_HARDWARE_VERSION=standard",
+    "-DT_PANEL_P4_EXAMPLE=factory_standard"
+  ],
+  "idf.portWin": "COM195"
+}
