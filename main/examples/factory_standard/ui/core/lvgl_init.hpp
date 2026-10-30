@@ -35,4 +35,6 @@ struct LvglPort
 };
 
 [[nodiscard]] esp_err_t initializeLvgl(const LvglPort &port);
+void pauseLvglInputState();
+void resetLvglInputState();
 }

@@ -40,11 +40,30 @@ endif()
 
 if(T_PANEL_P4_HARDWARE_VERSION STREQUAL "standard")
     set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_standard")
+    set(T_PANEL_P4_HARDWARE_VERSION_VALUE 1)
+    set(T_PANEL_P4_HAS_ESP32C5 TRUE)
+    set(T_PANEL_P4_HAS_LORA TRUE)
 elseif(T_PANEL_P4_HARDWARE_VERSION STREQUAL "rect")
     set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_rect")
+    set(T_PANEL_P4_HARDWARE_VERSION_VALUE 2)
+    set(T_PANEL_P4_HAS_ESP32C5 FALSE)
+    set(T_PANEL_P4_HAS_LORA FALSE)
 elseif(T_PANEL_P4_HARDWARE_VERSION STREQUAL "round")
     set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_round")
+    set(T_PANEL_P4_HARDWARE_VERSION_VALUE 3)
+    set(T_PANEL_P4_HAS_ESP32C5 TRUE)
+    set(T_PANEL_P4_HAS_LORA TRUE)
 endif()
+
+# The CMake variable above is only available while configuring the top-level
+# project. Export an integer enum through ESP-IDF's global compile definitions
+# so shared C/C++ code can select board-specific behavior with preprocessor
+# checks. The symbolic values are exported for readable comparisons.
+set(T_PANEL_P4_HARDWARE_COMPILE_DEFINITIONS
+    "T_PANEL_P4_HARDWARE_VERSION=${T_PANEL_P4_HARDWARE_VERSION_VALUE}"
+    "T_PANEL_P4_HARDWARE_VERSION_STANDARD=1"
+    "T_PANEL_P4_HARDWARE_VERSION_RECT=2"
+    "T_PANEL_P4_HARDWARE_VERSION_ROUND=3")
 
 set(T_PANEL_P4_BSP_DIR
     "${T_PANEL_P4_PROJECT_DIR}/components/bsp/${T_PANEL_P4_BSP_COMPONENT}")
@@ -73,6 +92,7 @@ if(NOT DEFINED CACHE{T_PANEL_P4_EXAMPLE})
 endif()
 set_property(CACHE T_PANEL_P4_EXAMPLE PROPERTY STRINGS
     factory_standard
+    factory_round
     axp517
     xl9555
     camera
@@ -81,6 +101,7 @@ set_property(CACHE T_PANEL_P4_EXAMPLE PROPERTY STRINGS
     audio/play_sd_mp3
     lcd/ili9882
     lcd/jd9365
+    lcd/jd9365da
     lr2021
     lvgl_fps_test
     lvgl_lcd_touch
@@ -88,6 +109,7 @@ set_property(CACHE T_PANEL_P4_EXAMPLE PROPERTY STRINGS
     sd
     sdio_esp32c5
     touch/jadard
+    touch/gt911
     usb_msc)
 
 string(TOLOWER "${T_PANEL_P4_EXAMPLE}" T_PANEL_P4_EXAMPLE)
@@ -110,6 +132,26 @@ if(NOT EXISTS "${T_PANEL_P4_EXAMPLE_CMAKE}")
     message(FATAL_ERROR
         "Unknown example '${T_PANEL_P4_EXAMPLE}'. Expected: "
         "${T_PANEL_P4_EXAMPLE_CMAKE}")
+endif()
+
+# Reject examples whose hardware feature is physically absent. This gives a
+# direct configuration error instead of a later unresolved-component error.
+set(_examples_require_esp32c5
+    sdio_esp32c5
+    factory_standard
+    factory_round)
+list(FIND _examples_require_esp32c5 "${T_PANEL_P4_EXAMPLE}"
+    _example_requires_esp32c5)
+if(_example_requires_esp32c5 GREATER -1 AND NOT T_PANEL_P4_HAS_ESP32C5)
+    message(FATAL_ERROR
+        "Example '${T_PANEL_P4_EXAMPLE}' requires the ESP32-C5 slave, but "
+        "hardware version '${T_PANEL_P4_HARDWARE_VERSION}' has no ESP32-C5.")
+endif()
+
+if(T_PANEL_P4_EXAMPLE STREQUAL "lr2021" AND NOT T_PANEL_P4_HAS_LORA)
+    message(FATAL_ERROR
+        "Example 'lr2021' requires the LoRa module, but hardware version "
+        "'${T_PANEL_P4_HARDWARE_VERSION}' has no LoRa module.")
 endif()
 
 # An example declares its BSP in its own CMake file. Catch a board/example

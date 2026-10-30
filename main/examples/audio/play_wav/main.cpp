@@ -9,12 +9,23 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
 #include <bsp/t_panel_p4_standard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE T_PANEL_P4_FPS_BOARD_NAMESPACE
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#include <bsp/t_panel_p4_rect.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
 
 extern const std::uint8_t wav_start[] asm("_binary_sample_3s_wav_start");
 extern const std::uint8_t wav_end[] asm("_binary_sample_3s_wav_end");
 
-using namespace bsp::t_panel_p4_standard;
+using namespace bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE;
 Board board;
 
 extern "C" void app_main(void)

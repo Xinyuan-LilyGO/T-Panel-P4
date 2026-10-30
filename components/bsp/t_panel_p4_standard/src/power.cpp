@@ -171,6 +171,30 @@ esp_err_t Board::deinitializePower()
                 axp517_->setInterruptsEnabled(0U),
                 "disable AXP517 interrupts"),
             first_error);
+        // These measurement and detection blocks are enabled by
+        // initializePower() for normal runtime telemetry.  Releasing the I2C
+        // transport does not change their AXP517 register state, so leave the
+        // PMIC running in a higher-current monitoring mode during deep sleep.
+        preserveFirstError(
+            pdlError(
+                axp517_->setAdcChannels(0U),
+                "disable AXP517 ADC"),
+            first_error);
+        preserveFirstError(
+            pdlError(
+                axp517_->setFuelGaugeLowFrequency(false),
+                "disable AXP517 low-frequency fuel gauge"),
+            first_error);
+        preserveFirstError(
+            pdlError(
+                axp517_->setFuelGaugeEnabled(false),
+                "disable AXP517 fuel gauge"),
+            first_error);
+        preserveFirstError(
+            pdlError(
+                axp517_->setBatteryDetectionEnabled(false),
+                "disable AXP517 battery detection"),
+            first_error);
         preserveFirstError(
             pdlError(axp517_->deinitialize(), "deinitialize AXP517"),
             first_error);
@@ -230,6 +254,24 @@ esp_err_t Board::readPowerStatus(
     return pdlError(
         axp517_->readPowerStatus(status, timeout_ms),
         "read AXP517 power status");
+}
+
+esp_err_t Board::setChargerEnabled(bool enabled, std::uint32_t timeout_ms)
+{
+    if (!isPowerInitialized())
+        return ESP_ERR_INVALID_STATE;
+    return pdlError(
+        axp517_->setChargerEnabled(enabled, timeout_ms),
+        "set AXP517 charger enabled");
+}
+
+esp_err_t Board::getChargerEnabled(bool &enabled, std::uint32_t timeout_ms)
+{
+    if (!isPowerInitialized())
+        return ESP_ERR_INVALID_STATE;
+    return pdlError(
+        axp517_->readChargerEnabled(enabled, timeout_ms),
+        "read AXP517 charger enabled");
 }
 
 esp_err_t Board::readPowerFaults(

@@ -1,7 +1,9 @@
 # LVGL FPS benchmark
 
-This example runs LVGL 9.5.0's official `lv_demo_benchmark()` on the
-720 x 720 JD9365 MIPI-DSI display.
+This example runs LVGL 9.5.0's official `lv_demo_benchmark()` on the selected
+T-Panel-P4 hardware version. The board selection is compile-time and supports
+the 720 x 720 standard/round panels and the 720 x 1440 rect panel, including
+their respective display and touch controllers.
 
 The benchmark cycles through the official scenes and shows the current FPS,
 render time, CPU usage, and final benchmark summary on the display. The same
@@ -20,8 +22,12 @@ Configure and build from an ESP-IDF 5.5.3 terminal:
 
 ```powershell
 idf.py -B build/lvgl_fps_test `
+    -D T_PANEL_P4_HARDWARE_VERSION=standard `
     -D T_PANEL_P4_EXAMPLE=lvgl_fps_test build
 ```
+
+Use `standard`, `round`, or `rect` for `T_PANEL_P4_HARDWARE_VERSION` and keep
+the build directory separate for each hardware version.
 
 Flash and open the serial monitor:
 

@@ -12,6 +12,7 @@
 #include <freertos/task.h>
 #include <esp_wifi.h>
 #include <sdmmc_cmd.h>
+#include <driver/gpio.h>
 
 #include <bsp/t_panel_p4_standard.hpp>
 #include <bsp/t_panel_p4_standard_pins.hpp>
@@ -34,6 +35,8 @@ namespace
     using bsp::t_panel_p4_standard::MusicState;
 
     constexpr char kTag[] = "factory";
+    constexpr TickType_t kButtonPollPeriod = pdMS_TO_TICKS(20);
+    constexpr TickType_t kButtonDebounceTime = pdMS_TO_TICKS(60);
 
     struct Application
     {
@@ -51,6 +54,8 @@ namespace
     };
 
     Application application;
+
+    void provideStatusBarCallback(status_info_t *status, void *context);
 
     void logHeapSnapshot(const char *stage)
     {
@@ -304,6 +309,18 @@ extern "C" esp_err_t settings_control_read_power(char *buffer, size_t buffer_siz
                   power_status.input_current_limited || power_status.input_voltage_limited ? "YES" : "NO",
                   fault_status.system_over_voltage || fault_status.battery_under_voltage ? "ACTIVE" : "NONE");
     return ESP_OK;
+}
+
+extern "C" esp_err_t settings_control_get_charger_enabled(bool *enabled)
+{
+    if (enabled == nullptr)
+        return ESP_ERR_INVALID_ARG;
+    return application.board.getChargerEnabled(*enabled);
+}
+
+extern "C" esp_err_t settings_control_set_charger_enabled(bool enabled)
+{
+    return application.board.setChargerEnabled(enabled);
 }
 
 extern "C" esp_err_t settings_control_get_backlight_brightness(std::uint8_t *percent)
@@ -666,66 +683,20 @@ extern "C" esp_err_t settings_control_enter_deep_sleep(void)
 
 extern "C" esp_err_t settings_control_enter_light_sleep(void)
 {
-    const auto progress = [](std::uint8_t step, bool complete, esp_err_t error, void *) {
-        settings_sleep_progress_update(step, complete, error);
-        vTaskDelay(pdMS_TO_TICKS(150));
-        if (step == 6U && !complete)
-            factory::ui::prepareStandardLvglPowerDown(true);
-        if (step == 8U && complete)
-            factory::ui::resumeStandardLvglDisplay();
-    };
-
-    const bool connectivity_was_initialized = application.esp32c5.isInitialized();
-    const bool wifi_was_started = application.esp32c5.status().wifi_started;
-    const auto restore_connectivity = [&]() {
-        if (!connectivity_was_initialized || application.esp32c5.isInitialized())
-            return ESP_OK;
-
-        esp_err_t restore_result = application.esp32c5.initialize(
-            application.esp32c5_config);
-        if (restore_result == ESP_OK && wifi_was_started)
-        {
-            restore_result = application.wifi_config_valid
-                                 ? application.esp32c5.startWifiStation(
-                                       application.wifi_config)
-                                 : ESP_ERR_INVALID_STATE;
-        }
-        application.esp32c5_result = restore_result;
-        if (restore_result != ESP_OK)
-            ESP_LOGE(kTag, "restore ESP32-C5 after light sleep failed: %s",
-                     esp_err_to_name(restore_result));
-        return restore_result;
-    };
-
+    // The status monitor reads AXP517 over the same I2C bus used by the
+    // Jadard touch controller. Stop it before the BSP removes the touch I2C
+    // device, otherwise an in-flight power read can make removal fail with
+    // ESP_ERR_INVALID_STATE.
     esp_err_t result = status_bar_stop_monitor();
     if (result != ESP_OK)
         return result;
-    if (connectivity_was_initialized)
-    {
-        result = application.esp32c5.deinitialize();
-        if (result != ESP_OK)
-        {
-            (void)restore_connectivity();
-            status_bar_start_monitor(provideStatusBarCallback, &application);
-            return result;
-        }
-        application.esp32c5_result = ESP_ERR_INVALID_STATE;
-    }
 
-    result = application.board.enterLightSleep(
-        bsp::t_panel_p4_standard::LightSleepConfig{}, progress, nullptr);
+    factory::ui::prepareStandardLvglPowerDown(true);
+    result = application.board.enterLightSleep();
+    if (result != ESP_OK && !application.board.isTouchInitialized())
+        (void)application.board.initializeTouch();
     if (application.board.isDisplayInitialized())
-    {
-        if (!application.board.isTouchInitialized())
-            (void)application.board.initializeTouch();
         factory::ui::resumeStandardLvglDisplay();
-    }
-    settings_sleep_progress_update(9U, false, ESP_OK);
-    vTaskDelay(pdMS_TO_TICKS(150));
-    const esp_err_t connectivity_result = restore_connectivity();
-    settings_sleep_progress_update(9U, true, connectivity_result);
-    if (result == ESP_OK && connectivity_result != ESP_OK)
-        result = connectivity_result;
     status_bar_start_monitor(provideStatusBarCallback, &application);
     return result;
 }

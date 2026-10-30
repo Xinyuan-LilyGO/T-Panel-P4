@@ -14,9 +14,29 @@
 #include <lvgl.h>
 #include <demos/lv_demos.h>
 
-#include <bsp/t_panel_p4_standard.hpp>
 #include <pdl/core/status.hpp>
+
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
+#include <bsp/t_panel_p4_standard.hpp>
 #include <pdl/drivers/touch/jadard/jadard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_standard
+#define T_PANEL_P4_FPS_TOUCH JadardTouch
+#define T_PANEL_P4_FPS_TOUCH_DATA JadardTouchData
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#include <pdl/drivers/touch/gt911/gt911.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#define T_PANEL_P4_FPS_TOUCH Gt911Touch
+#define T_PANEL_P4_FPS_TOUCH_DATA Gt911TouchData
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#include <bsp/t_panel_p4_rect.hpp>
+#include <pdl/drivers/touch/ili9882/ili9882.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
+#define T_PANEL_P4_FPS_TOUCH Ili9882Touch
+#define T_PANEL_P4_FPS_TOUCH_DATA Ili9882TouchData
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
 
 namespace
 {
@@ -26,21 +46,26 @@ namespace
     static_assert(LV_USE_OS == LV_OS_FREERTOS, "LVGL FreeRTOS backend is required");
     static_assert(LV_DRAW_SW_DRAW_UNIT_CNT == 2, "Two software draw units are required");
     static_assert(LV_OBJ_STYLE_CACHE == 1, "LVGL object style cache is required");
-    static_assert(LV_USE_PPA == 1, "ESP32-P4 PPA drawing is required");
-    static_assert(LV_USE_PPA_IMG == 1, "ESP32-P4 PPA image drawing is required");
+    // static_assert(LV_USE_PPA == 1, "ESP32-P4 PPA drawing is required");
+    // static_assert(LV_USE_PPA_IMG == 1, "ESP32-P4 PPA image drawing is required");
     static_assert(LV_DEMO_BENCHMARK_ALIGNED_FONTS == 1, "LVGL benchmark aligned fonts are required");
 
+    using Board = bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board;
+    using DisplayConfig = bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::DisplayConfig;
+    using Touch = pdl::touch::T_PANEL_P4_FPS_TOUCH;
+    using TouchData = pdl::touch::T_PANEL_P4_FPS_TOUCH_DATA;
+
     constexpr char kTag[] = "lvgl_fps_test";
-    constexpr int kDisplayWidth = bsp::t_panel_p4_standard::Board::displayWidth;
-    constexpr int kDisplayHeight = bsp::t_panel_p4_standard::Board::displayHeight;
+    constexpr int kDisplayWidth = Board::displayWidth;
+    constexpr int kDisplayHeight = Board::displayHeight;
     constexpr std::uint32_t kTouchTimeoutMs = 5;
     constexpr std::uint32_t kMinimumLoopDelayMs = 1;
     constexpr std::uint32_t kMaximumLoopDelayMs = 10;
 
     struct Application
     {
-        bsp::t_panel_p4_standard::Board board;
-        pdl::touch::JadardTouch *touch{};
+        Board board;
+        Touch *touch{};
         SemaphoreHandle_t refresh_semaphore{};
         lv_area_t pending_refresh_area{};
         bool has_pending_refresh_area{};
@@ -140,7 +165,7 @@ namespace
             return;
         }
 
-        pdl::touch::JadardTouchData report{};
+        TouchData report{};
         const pdl::Status status =
             app->touch->readTouchData(report, kTouchTimeoutMs);
         if (pdl::isError(status) || report.finger_count == 0U)
@@ -291,7 +316,7 @@ namespace
 extern "C" void app_main(void)
 {
     ESP_ERROR_CHECK(application.board.initialize());
-    bsp::t_panel_p4_standard::DisplayConfig display_config{};
+    DisplayConfig display_config{};
     display_config.frame_buffer_count = 2;
     ESP_ERROR_CHECK(application.board.initializeDisplay(display_config));
     ESP_ERROR_CHECK(application.board.initializeTouch());

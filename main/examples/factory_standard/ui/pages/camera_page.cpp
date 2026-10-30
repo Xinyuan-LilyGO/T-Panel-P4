@@ -1,4 +1,3 @@
-#include "core/lv_obj_scroll.h"
 #include "libs/tjpgd/tjpgd.h"
 #include "page_common.h"
 #include <app/services/camera_control.h>

@@ -7,15 +7,18 @@
     "IDF_TARGET": "esp32p4",
     "IDF_COMPONENT_MANAGER": "1"
   },
-  "idf.buildPath": "${workspaceFolder}/build/standard-factory_standard",
-  "idf.buildPathWin": "${workspaceFolder}\\build\\standard-factory_standard",
+  "tPanelP4.hardwareVersion": "round",
+  "tPanelP4.example": "factory_round",
+  "tPanelP4.buildDirectory": "${config:tPanelP4.hardwareVersion}-${config:tPanelP4.example}",
+  "idf.buildPath": "${workspaceFolder}/build/${config:tPanelP4.buildDirectory}",
+  "idf.buildPathWin": "${workspaceFolder}\\build\\${config:tPanelP4.buildDirectory}",
   "idf.cmakeCompilerArgs": [
     "-G",
     "Ninja",
     "-DPYTHON_DEPS_CHECKED=1",
     "-DESP_PLATFORM=1",
-    "-DT_PANEL_P4_HARDWARE_VERSION=standard",
-    "-DT_PANEL_P4_EXAMPLE=factory_standard"
+    "-DT_PANEL_P4_HARDWARE_VERSION=${config:tPanelP4.hardwareVersion}",
+    "-DT_PANEL_P4_EXAMPLE=${config:tPanelP4.example}"
   ],
-  "idf.portWin": "COM195"
+  "idf.portWin": "COM236"
 }

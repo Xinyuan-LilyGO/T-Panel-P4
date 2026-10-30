@@ -7,8 +7,20 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <bsp/t_panel_p4_standard.hpp>
 #include <pdl/core/status.hpp>
+
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
+#include <bsp/t_panel_p4_standard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE T_PANEL_P4_FPS_BOARD_NAMESPACE
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#include <bsp/t_panel_p4_rect.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
 
 namespace
 {
@@ -46,7 +58,7 @@ namespace
     }
 
     esp_err_t writeAll(
-        bsp::t_panel_p4_standard::Board &board,
+        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board &board,
         const std::uint8_t *data,
         std::size_t size)
     {
@@ -70,17 +82,17 @@ namespace
 
     esp_err_t runLoopback()
     {
-        bsp::t_panel_p4_standard::Board board;
+        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
         esp_err_t error = board.initialize();
         if (error != ESP_OK)
             return error;
 
-        bsp::t_panel_p4_standard::AudioConfig audio_config{};
+        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::AudioConfig audio_config{};
         audio_config.sample_rate_hz = kSampleRateHz;
-        audio_config.word_length = bsp::t_panel_p4_standard::AudioWordLength::bits16;
+        audio_config.word_length = bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::AudioWordLength::bits16;
         audio_config.mclk_multiple = I2S_MCLK_MULTIPLE_256;
         audio_config.output_volume_db = kOutputVolumeDb;
-        audio_config.microphone_gain = bsp::t_panel_p4_standard::AudioMicrophoneGain::db12_5;
+        audio_config.microphone_gain = bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::AudioMicrophoneGain::db12_5;
         audio_config.no_dac_reference = true;
         audio_config.enable_speaker = true;
         error = board.initializeAudio(audio_config);

@@ -6,14 +6,24 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
 #include <bsp/t_panel_p4_standard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_standard
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#error "LR2021 example is not supported on T_PANEL_P4_HARDWARE_VERSION_RECT"
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
 
 namespace
 {
     constexpr char kTag[] = "lr2021_example";
     constexpr TickType_t kSendInterval = pdMS_TO_TICKS(5000);
 
-    bsp::t_panel_p4_standard::Board board;
+    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
 
     void runTransmitLoop(LR2021 &radio)
     {
@@ -51,7 +61,7 @@ extern "C" void app_main(void)
 {
     ESP_ERROR_CHECK(board.initialize());
 
-    bsp::t_panel_p4_standard::LoraConfig config{};
+    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::LoraConfig config{};
     config.frequency_mhz = 2450.0F;
     config.bandwidth_khz = 125.0F;
     config.spreading_factor = 7;

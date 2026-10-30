@@ -1,4 +1,3 @@
-#include "core/lv_obj_pos.h"
 #include "page_common.h"
 #include <app/services/record_audio.h>
 #include <app/services/music_audio.h>

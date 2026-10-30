@@ -25,6 +25,9 @@ esp_err_t Board::initializeTouch(const TouchConfig &config)
     if (isTouchInitialized())
         return ESP_OK;
 
+    touch_perform_hardware_reset_ = config.perform_hardware_reset;
+    touch_perform_software_reset_ = config.perform_software_reset;
+
     if (config.perform_hardware_reset)
     {
         ESP_RETURN_ON_ERROR(

@@ -12,13 +12,25 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
 #include <bsp/t_panel_p4_standard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE T_PANEL_P4_FPS_BOARD_NAMESPACE
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#include <bsp/t_panel_p4_rect.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
+
 
 namespace
 {
     constexpr char kTag[] = "camera";
-    constexpr std::uint32_t kDisplayWidth = bsp::t_panel_p4_standard::Board::displayWidth;
-    constexpr std::uint32_t kDisplayHeight = bsp::t_panel_p4_standard::Board::displayHeight;
+    constexpr std::uint32_t kDisplayWidth = T_PANEL_P4_FPS_BOARD_NAMESPACE::Board::displayWidth;
+    constexpr std::uint32_t kDisplayHeight = T_PANEL_P4_FPS_BOARD_NAMESPACE::Board::displayHeight;
     constexpr std::uint32_t kPreviewCropSize = 960;
     constexpr float kPreviewScale = 0.75F;
     constexpr std::size_t kRgb565BytesPerPixel = 2;
@@ -33,7 +45,7 @@ namespace
 
     struct Application
     {
-        bsp::t_panel_p4_standard::Board board;
+        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
         pdl::camera::Ov2710ModeInfo camera_mode{};
         ppa_client_handle_t ppa_client{};
         SemaphoreHandle_t display_ready{};
@@ -56,7 +68,7 @@ namespace
 
     esp_err_t initializeDisplay(Application &app)
     {
-        bsp::t_panel_p4_standard::DisplayConfig config{};
+        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::DisplayConfig config{};
         config.frame_buffer_count = kDisplayBufferCount;
         ESP_RETURN_ON_ERROR(
             app.board.initializeDisplay(config),
@@ -153,7 +165,7 @@ namespace
 
         while (true)
         {
-            bsp::t_panel_p4_standard::CameraFrame frame{};
+            bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::CameraFrame frame{};
             const esp_err_t acquire_error = app.board.acquireCameraFrame(
                 frame,
                 kFrameWaitMilliseconds);
@@ -276,7 +288,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(application.board.initialize());
     ESP_ERROR_CHECK(initializeDisplay(application));
 
-    bsp::t_panel_p4_standard::CameraConfig camera_config{};
+    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::CameraConfig camera_config{};
     camera_config.mode = pdl::camera::Ov2710Mode::raw10_1920x1080_25fps;
     camera_config.capture_buffer_count = 3;
     camera_config.auto_exposure_target = 0x28;

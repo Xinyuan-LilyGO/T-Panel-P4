@@ -45,7 +45,7 @@ struct MusicRuntime;
 
 struct DisplayConfig
 {
-    std::uint8_t frame_buffer_count{1};
+    std::uint8_t frame_buffer_count{2};
     bool read_display_id{true};
 };
 
@@ -368,7 +368,7 @@ class Board
 public:
     static constexpr int displayWidth = 720;
     static constexpr int displayHeight = 720;
-    static constexpr std::uint8_t displayBitsPerPixel = 16;
+    static constexpr std::uint8_t displayBitsPerPixel = 24;
     static constexpr std::uint8_t maximumFrameBufferCount = 3;
     static constexpr std::uint8_t maximumCameraBufferCount = 3;
 
@@ -388,8 +388,8 @@ public:
         std::uint32_t timeout_ms = 100,
         ShipModeProgressCallback progress_callback = nullptr,
         void *progress_context = nullptr);
-    // Light sleep temporarily releases active peripherals and restores their
-    // prior configuration after wake. Active recording or music is rejected.
+    // Enter and return from ESP32-P4 light sleep. Display and peripheral
+    // state are left untouched.
     [[nodiscard]] esp_err_t enterLightSleep();
     [[nodiscard]] esp_err_t enterLightSleep(const LightSleepConfig &config,
         SleepProgressCallback progress = nullptr, void *context = nullptr);
@@ -423,6 +423,12 @@ public:
         void *context = nullptr);
     [[nodiscard]] esp_err_t readPowerStatus(
         pdl::charge::Axp517PowerStatus &status,
+        std::uint32_t timeout_ms = 100);
+    [[nodiscard]] esp_err_t setChargerEnabled(
+        bool enabled,
+        std::uint32_t timeout_ms = 100);
+    [[nodiscard]] esp_err_t getChargerEnabled(
+        bool &enabled,
         std::uint32_t timeout_ms = 100);
     [[nodiscard]] esp_err_t readPowerFaults(
         pdl::charge::Axp517FaultStatus &status,
@@ -585,11 +591,17 @@ public:
 
     [[nodiscard]] esp_err_t setBacklightBrightness(std::uint8_t percent);
     [[nodiscard]] std::uint8_t backlightBrightness() const noexcept;
+    // Light-sleep display control: suspend the DPI stream/GDMA around P4 light
+    // sleep, resynchronize JD9365 with write-only commands, and toggle the
+    // backlight. Resume performs no panel register reads.
+    [[nodiscard]] esp_err_t setDisplaySleep(bool sleeping);
 
     [[nodiscard]] esp_err_t setSpeakerEnabled(bool enabled);
     [[nodiscard]] bool isSpeakerEnabled() const noexcept;
     [[nodiscard]] esp_err_t setSdPowerEnabled(bool enabled);
     [[nodiscard]] esp_err_t setLoraPowerEnabled(bool enabled);
+    [[nodiscard]] esp_err_t setC5AudioLcdEnabled(bool enabled);
+    [[nodiscard]] bool isC5AudioLcdEnabled() const noexcept;
     [[nodiscard]] esp_err_t resetTouchController();
 
     [[nodiscard]] pdl::esp_idf::I2cBus *i2cBus() noexcept;
@@ -636,6 +648,8 @@ private:
     std::optional<pdl::expand_io::Xl9555> xl9555_;
     std::optional<pdl::esp_idf::I2cDevice> touch_transport_;
     std::optional<pdl::touch::JadardTouch> touch_;
+    bool touch_perform_hardware_reset_{true};
+    bool touch_perform_software_reset_{true};
     pdl::esp_idf::GpioInterrupt touch_interrupt_;
     std::optional<pdl::esp_idf::I2cDevice> axp517_transport_;
     std::optional<pdl::charge::Axp517> axp517_;
@@ -681,7 +695,10 @@ private:
     std::array<void *, maximumFrameBufferCount> frame_buffers_{};
 
     std::uint8_t frame_buffer_count_{};
+    bool display_read_display_id_{true};
     std::uint8_t backlight_brightness_{};
+    std::uint8_t display_sleep_brightness_{};
+    bool display_sleeping_{};
     bool initialized_{};
     bool backlight_initialized_{};
     bool panel_initialized_{};
@@ -692,6 +709,7 @@ private:
     bool audio_capture_enabled_{};
     bool audio_capture_muted_{};
     bool speaker_enabled_{};
+    bool c5_audio_lcd_enabled_{};
     bool audio_output_enabled_{};
     bool audio_output_muted_{};
     MusicRuntime *music_runtime_{};

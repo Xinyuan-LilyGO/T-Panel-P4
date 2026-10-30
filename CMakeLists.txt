@@ -91,34 +91,55 @@ set(COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/components/peripheral_drivers_lib"
 )
 
-if(T_PANEL_P4_EXAMPLE STREQUAL "sdio_esp32c5" OR
-   T_PANEL_P4_EXAMPLE STREQUAL "factory_standard")
+set(_c5_examples
+    sdio_esp32c5
+    factory_standard
+    factory_round)
+list(FIND _c5_examples "${T_PANEL_P4_EXAMPLE}" _c5_example_index)
+if(T_PANEL_P4_HAS_ESP32C5 AND NOT _c5_example_index EQUAL -1)
     list(APPEND COMPONENT_DIRS
         "${CMAKE_CURRENT_LIST_DIR}/components/connectivity/esp32c5_connectivity"
     )
     # esp_wifi_remote 1.6.x names its IDF-specific Kconfig by major.minor.
     # Set this before project.cmake discovers and evaluates managed components.
     set(ENV{ESP_IDF_VERSION} "5.5")
+else()
+    # Rect hardware has no ESP32-C5 slave. Keep this component out of the
+    # dependency graph even when an old build directory or manifest mentions it.
+    list(APPEND EXCLUDE_COMPONENTS esp32c5_connectivity)
 endif()
 
 if(T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
     set(ENV{T_PANEL_P4_RECT_LCD_ONLY} "1")
-    # The RECT LCD example does not use the standard BSP, LoRa, or audio
-    # dependency graph. Keep those components out of dependency discovery.
-    set(EXCLUDE_COMPONENTS t_panel_p4_standard jgromes__radiolib)
+endif()
+
+if(NOT T_PANEL_P4_HAS_LORA)
+    # Rect hardware has no LoRa module, so do not discover the managed
+    # RadioLib component for any rect example.
+    list(APPEND EXCLUDE_COMPONENTS jgromes__radiolib)
 endif()
 
 # Permit reproducible offline builds after managed dependencies are present.
 if("$ENV{IDF_COMPONENT_MANAGER}" STREQUAL "0")
-    if(NOT T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
+    if(T_PANEL_P4_HAS_LORA)
         list(APPEND COMPONENT_DIRS
             "${CMAKE_CURRENT_LIST_DIR}/managed_components/jgromes__radiolib"
+            "${CMAKE_CURRENT_LIST_DIR}/managed_components/lvgl__lvgl"
+        )
+    elseif(NOT T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
+        list(APPEND COMPONENT_DIRS
             "${CMAKE_CURRENT_LIST_DIR}/managed_components/lvgl__lvgl"
         )
     endif()
 endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# Make the selected board hardware version available to every component,
+# including shared components whose CMake files run in ESP-IDF's component
+# context and cannot see ordinary top-level CMake variables.
+idf_build_set_property(COMPILE_DEFINITIONS
+    "${T_PANEL_P4_HARDWARE_COMPILE_DEFINITIONS}" APPEND)
 
 idf_build_set_property(MINIMAL_BUILD ON)
 string(REPLACE "/" "-" _project_example "${T_PANEL_P4_EXAMPLE}")

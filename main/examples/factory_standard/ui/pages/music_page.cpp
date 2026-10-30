@@ -1,7 +1,3 @@
-#include "core/lv_obj.h"
-#include "core/lv_obj_pos.h"
-#include "core/lv_obj_style_gen.h"
-#include "misc/lv_color.h"
 #include "page_common.h"
 #include "libs/tjpgd/tjpgd.h"
 
@@ -1304,8 +1300,6 @@ static void music_playlist_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_music_ui.playlist, 0, 0);
     lv_obj_set_style_pad_all(s_music_ui.playlist, 22, 0);
     lv_obj_set_scrollbar_mode(s_music_ui.playlist, LV_SCROLLBAR_MODE_OFF);
-    /* The close-button corner brackets extend four pixels outside the
-     * button. Allow those child objects to render beyond the playlist panel. */
     lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     lv_obj_remove_flag(s_music_ui.playlist, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
@@ -1360,6 +1354,9 @@ static void music_playlist_create(lv_obj_t *parent)
         lv_obj_set_style_radius(number, 0, 0);
         lv_obj_set_style_bg_color(number, lv_color_hex(CYBER_CYAN), 0);
         lv_obj_align(number, LV_ALIGN_LEFT_MID, 12, 0);
+        lv_obj_set_style_border_width(number, 0, 0);
+        lv_obj_set_style_pad_all(number, 0, 0);
+
         lv_obj_t *title = page_ui_label(
             item, "", &lv_font_source_han_sans_sc_16_cjk, CYBER_TEXT);
         lv_obj_set_width(title, MUSIC_LIST_WIDTH - 174);
@@ -1562,8 +1559,8 @@ static void music_page_create(Page *page)
     lv_obj_set_style_border_side(lyric_container, LV_BORDER_SIDE_LEFT, 0);
     lv_obj_set_style_border_color(lyric_container, lv_color_hex(CYBER_CYAN), 0);
     lv_obj_set_style_bg_color(lyric_container, lv_color_hex(CYBER_CYAN), 0);
-    // lv_obj_set_style_bg_grad_color(lyric_container, lv_color_hex(CYBER_BG), 0);
-    // lv_obj_set_style_bg_grad_dir(lyric_container, LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_bg_grad_color(lyric_container, lv_color_hex(CYBER_BG), 0);
+    lv_obj_set_style_bg_grad_dir(lyric_container, LV_GRAD_DIR_HOR, 0);
     lv_obj_set_style_bg_opa(lyric_container, LV_OPA_20, 0);
     lv_obj_set_style_radius(lyric_container, 0, 0);
     lv_obj_set_style_pad_all(lyric_container, 0, 0);

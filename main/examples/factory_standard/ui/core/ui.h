@@ -55,6 +55,8 @@ LV_FONT_DECLARE(lv_font_source_han_sans_sc_16_cjk);
 esp_err_t factory_ui_start(void);
 /* Settings actions are implemented by the board owning application. */
 esp_err_t settings_control_read_power(char *buffer, size_t buffer_size);
+esp_err_t settings_control_get_charger_enabled(bool *enabled);
+esp_err_t settings_control_set_charger_enabled(bool enabled);
 esp_err_t settings_control_get_backlight_brightness(uint8_t *percent);
 esp_err_t settings_control_set_backlight_brightness(uint8_t percent);
 bool settings_control_is_sd_msc_enabled(void);

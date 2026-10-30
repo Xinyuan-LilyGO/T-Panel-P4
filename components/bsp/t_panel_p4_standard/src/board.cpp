@@ -139,8 +139,9 @@ namespace
 
         if (config.timer_wakeup_us != 0U)
         {
-            const esp_err_t error =
-                esp_sleep_enable_timer_wakeup(config.timer_wakeup_us);
+            // 启用ESP32定时器唤醒功能，设置唤醒时间
+            const esp_err_t error =                                    // 定义一个错误码变量，用于存储函数返回结果
+                esp_sleep_enable_timer_wakeup(config.timer_wakeup_us); // 调用ESP32的API函数，设置定时器唤醒时间，参数为配置中的微秒数
             if (error != ESP_OK)
             {
                 disableLightSleepWakeup(config);
@@ -291,6 +292,8 @@ namespace bsp::t_panel_p4_standard
         }
 
         initialized_ = true;
+
+        setC5AudioLcdEnabled(true);
         error = initializePower();
         if (error != ESP_OK)
         {
@@ -313,6 +316,16 @@ namespace bsp::t_panel_p4_standard
         {
             return first_error;
         }
+
+        // The C5/audio/LCD rail is controlled through XL9555, so disable it
+        // before tearing down the expander and its I2C transport.  In
+        // particular, deep-sleep teardown must cut this rail while the
+        // expander is still usable.
+        if (c5_audio_lcd_enabled_ && xl9555_ && xl9555_->isInitialized())
+        {
+            preserveFirstError(setC5AudioLcdEnabled(false), first_error);
+        }
+
         if (spi_bus_.isInitialized())
         {
             preserveFirstError(
@@ -343,41 +356,56 @@ namespace bsp::t_panel_p4_standard
 
         initialized_ = false;
         speaker_enabled_ = false;
+        c5_audio_lcd_enabled_ = false;
         return first_error;
     }
 
-esp_err_t Board::prepareForPowerDown(
-    ShipModeProgressCallback progress_callback, void *progress_context)
-{
-    const auto run_step = [&](ShipModeStep step, auto operation) {
-        if (progress_callback != nullptr)
-            progress_callback(step, false, ESP_OK, progress_context);
-        const esp_err_t result = operation();
-        if (progress_callback != nullptr)
-            progress_callback(step, true, result, progress_context);
-        return result;
-    };
+    esp_err_t Board::prepareForPowerDown(
+        ShipModeProgressCallback progress_callback, void *progress_context)
+    {
+        const auto run_step = [&](ShipModeStep step, auto operation)
+        {
+            if (progress_callback != nullptr)
+                progress_callback(step, false, ESP_OK, progress_context);
+            const esp_err_t result = operation();
+            if (progress_callback != nullptr)
+                progress_callback(step, true, result, progress_context);
+            return result;
+        };
 
-    esp_err_t first_error = run_step(ShipModeStep::usb_msc,
-                                     [this] { return deinitializeUsbMsc(); });
-    if (isUsbMscInitialized())
-        return first_error;
-    preserveFirstError(run_step(ShipModeStep::sd_card,
-                                [this] { return deinitializeSdCard(); }), first_error);
-    preserveFirstError(run_step(ShipModeStep::camera,
-                                [this] { return deinitializeCamera(); }), first_error);
-    // Keep the display alive while the progress list is being updated.  The
-    // ship-mode path closes it after the power controller step so the user
-    // can see the earlier shutdown stages complete.
-    if (progress_callback == nullptr)
-        preserveFirstError(run_step(ShipModeStep::display,
-                                    [this] { return deinitializeDisplay(); }), first_error);
-    preserveFirstError(run_step(ShipModeStep::touch,
-                                [this] { return deinitializeTouch(); }), first_error);
-    preserveFirstError(run_step(ShipModeStep::audio,
-                                [this] { return deinitializeAudio(); }), first_error);
-    preserveFirstError(run_step(ShipModeStep::lora,
-                                [this] { return deinitializeLora(); }), first_error);
+        esp_err_t first_error = run_step(ShipModeStep::usb_msc,
+                                         [this]
+                                         { return deinitializeUsbMsc(); });
+        if (isUsbMscInitialized())
+            return first_error;
+        preserveFirstError(run_step(ShipModeStep::sd_card,
+                                    [this]
+                                    { return deinitializeSdCard(); }),
+                           first_error);
+        preserveFirstError(run_step(ShipModeStep::camera,
+                                    [this]
+                                    { return deinitializeCamera(); }),
+                           first_error);
+        // Keep the display alive while the progress list is being updated.  The
+        // ship-mode path closes it after the power controller step so the user
+        // can see the earlier shutdown stages complete.
+        if (progress_callback == nullptr)
+            preserveFirstError(run_step(ShipModeStep::display,
+                                        [this]
+                                        { return deinitializeDisplay(); }),
+                               first_error);
+        preserveFirstError(run_step(ShipModeStep::touch,
+                                    [this]
+                                    { return deinitializeTouch(); }),
+                           first_error);
+        preserveFirstError(run_step(ShipModeStep::audio,
+                                    [this]
+                                    { return deinitializeAudio(); }),
+                           first_error);
+        preserveFirstError(run_step(ShipModeStep::lora,
+                                    [this]
+                                    { return deinitializeLora(); }),
+                           first_error);
 
         if (progress_callback == nullptr && xl9555_ && xl9555_->isInitialized())
         {
@@ -392,9 +420,9 @@ esp_err_t Board::prepareForPowerDown(
         return first_error;
     }
 
-esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
-                               ShipModeProgressCallback progress_callback,
-                               void *progress_context)
+    esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
+                                   ShipModeProgressCallback progress_callback,
+                                   void *progress_context)
     {
         if (!initialized_)
             return ESP_ERR_INVALID_STATE;
@@ -433,6 +461,8 @@ esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
         stopPowerEventTask();
         if (error != ESP_OK)
             return error;
+
+        setC5AudioLcdEnabled(true);
 
         ESP_LOGW(kTag, "Entering AXP517 ship mode");
         if (progress_callback != nullptr)
@@ -481,183 +511,91 @@ esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
     }
 
     esp_err_t Board::enterLightSleep(const LightSleepConfig &config,
-                                    SleepProgressCallback progress, void *context)
+                                     SleepProgressCallback progress, void *context)
     {
-        const auto notify = [&](std::uint8_t step, bool complete, esp_err_t result) {
-            if (progress != nullptr) progress(step, complete, result, context);
-        };
-        notify(0, false, ESP_OK);
         if (!initialized_)
         {
-            notify(0, true, ESP_ERR_INVALID_STATE);
             return ESP_ERR_INVALID_STATE;
         }
 
-        const bool restore_usb_msc = isUsbMscInitialized();
-        const bool restore_sd = isSdCardInitialized() &&
-                                !(restore_usb_msc && usb_msc_owns_sd_card_);
-        const bool restore_camera = isCameraInitialized();
-        const bool restore_camera_stream = restore_camera && isCameraStreaming();
-        const CameraConfig camera_config = cameraConfig();
-        const bool restore_audio = isAudioInitialized() || isAudioOutputEnabled() ||
-                                   isAudioCaptureEnabled() || isSpeakerEnabled();
-        const AudioConfig audio_config = audioConfig();
-        const bool audio_muted = isAudioMuted();
-        const bool audio_output_enabled = isAudioOutputEnabled();
-        const bool audio_capture_enabled = isAudioCaptureEnabled();
-        const bool audio_capture_muted = isAudioCaptureMuted();
-        const bool speaker_enabled = isSpeakerEnabled();
-        const float audio_volume_db = audioVolumeDb();
-        const bool restore_lora = isLoraInitialized();
-        LoraConfig lora_config{};
-        if (const LoraConfig *configured_lora = loraConfig(); configured_lora != nullptr)
-            lora_config = *configured_lora;
+        esp_err_t error = configureLightSleepWakeup(config);
 
-        const RecordingState current_recording_state = recording_state_.load();
-        const MusicState current_music_state = musicState();
-        if (current_recording_state == RecordingState::starting ||
-            current_recording_state == RecordingState::recording ||
-            current_recording_state == RecordingState::stopping ||
-            current_music_state == MusicState::starting ||
-            current_music_state == MusicState::playing ||
-            current_music_state == MusicState::paused)
-        {
-            notify(3, false, ESP_OK);
-            notify(3, true, ESP_ERR_INVALID_STATE);
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        const auto stop_step = [&](std::uint8_t step, bool active, auto operation) {
-            notify(step, false, ESP_OK);
-            const esp_err_t result = active ? operation() : ESP_OK;
-            notify(step, true, result);
-            return result;
-        };
-        const auto restore_peripherals = [&]() {
-            esp_err_t restore_error = ESP_OK;
-            if (restore_sd && !isSdCardInitialized())
-                preserveFirstError(initializeSdCard(sd_card_config_), restore_error);
-            if (restore_camera)
-            {
-                if (!isCameraInitialized())
-                    preserveFirstError(initializeCamera(camera_config), restore_error);
-                if (restore_camera_stream && isCameraInitialized() && !isCameraStreaming())
-                    preserveFirstError(startCameraStreaming(), restore_error);
-            }
-            if (restore_audio)
-            {
-                if (!isAudioInitialized())
-                    preserveFirstError(initializeAudio(audio_config), restore_error);
-                if (isAudioInitialized())
-                {
-                    preserveFirstError(setSpeakerEnabled(speaker_enabled), restore_error);
-                    preserveFirstError(setAudioOutputEnabled(audio_output_enabled), restore_error);
-                    preserveFirstError(setAudioCaptureEnabled(audio_capture_enabled), restore_error);
-                    preserveFirstError(setAudioVolumeDb(audio_volume_db), restore_error);
-                    preserveFirstError(setAudioMuted(audio_muted), restore_error);
-                    preserveFirstError(setAudioCaptureMuted(audio_capture_muted), restore_error);
-                }
-            }
-            if (restore_lora && !isLoraInitialized())
-                preserveFirstError(initializeLora(lora_config), restore_error);
-            if (restore_usb_msc && !isUsbMscInitialized())
-                preserveFirstError(initializeUsbMsc(), restore_error);
-            return restore_error;
-        };
-
-        esp_err_t error = stop_step(0U, true,
-                                    [this] { return deinitializeUsbMsc(); });
-        if (error == ESP_OK)
-            error = stop_step(1U, true,
-                              [this] { return deinitializeSdCard(); });
-        if (error == ESP_OK)
-            error = stop_step(2U, true,
-                              [this] { return deinitializeCamera(); });
-        if (error == ESP_OK)
-            error = stop_step(3U, true,
-                              [this] { return deinitializeAudio(); });
-        if (error == ESP_OK)
-            error = stop_step(4U, true,
-                              [this] { return deinitializeLora(); });
         if (error != ESP_OK)
-        {
-            notify(9U, false, ESP_OK);
-            const esp_err_t restore_error = restore_peripherals();
-            preserveFirstError(restore_error, error);
-            notify(9U, true, restore_error);
             return error;
-        }
 
-        notify(5U, false, ESP_OK);
-        error = configureLightSleepWakeup(config);
-        notify(5U, true, error);
-        if (error != ESP_OK)
-        {
-            notify(9U, false, ESP_OK);
-            const esp_err_t restore_error = restore_peripherals();
-            preserveFirstError(restore_error, error);
-            notify(9U, true, restore_error);
-            return error;
-        }
-
-        notify(6U, false, ESP_OK);
-        const std::uint8_t saved_brightness = backlightBrightness();
-        bool display_suspended = false;
-        if (config.suspend_display && isDisplayInitialized())
-        {
-            error = setBacklightBrightness(0);
-            if (error == ESP_OK)
-                error = esp_lcd_panel_disp_on_off(panel_, false);
-            if (error == ESP_OK)
-                error = esp_lcd_panel_disp_sleep(panel_, true);
-            if (error != ESP_OK)
-            {
-                (void)esp_lcd_panel_disp_on_off(panel_, true);
-                (void)setBacklightBrightness(saved_brightness);
-                disableLightSleepWakeup(config);
-                notify(6U, true, error);
-                notify(9U, false, ESP_OK);
-                const esp_err_t restore_error = restore_peripherals();
-                preserveFirstError(restore_error, error);
-                notify(9U, true, restore_error);
-                return error;
-            }
-            display_suspended = true;
-            vTaskDelay(pdMS_TO_TICKS(kDisplaySleepDelayMilliseconds));
-        }
-
-        notify(6U, true, ESP_OK);
-        notify(7U, false, ESP_OK);
         ESP_LOGI(
             kTag,
             "Entering light sleep: GPIO=%d active-%s, timer=%llu us",
             static_cast<int>(config.wakeup_gpio),
             config.wakeup_on_high ? "high" : "low",
             static_cast<unsigned long long>(config.timer_wakeup_us));
-        esp_err_t first_error = esp_light_sleep_start();
-        notify(7U, true, first_error);
-        notify(8U, false, ESP_OK);
 
-        esp_err_t display_restore_error = ESP_OK;
-        if (display_suspended)
+        const bool display_was_initialized = isDisplayInitialized();
+        const bool touch_was_initialized = isTouchInitialized();
+        const TouchConfig touch_config{
+            touch_perform_hardware_reset_,
+            touch_perform_software_reset_};
+        const std::uint8_t display_frame_buffer_count = frame_buffer_count_;
+        const bool display_read_display_id = display_read_display_id_;
+        // setDisplaySleep(true) may have already turned the backlight off
+        // while retaining the user's brightness for wakeup. Preserve that
+        // value instead of capturing the temporary zero duty cycle.
+        const std::uint8_t display_brightness =
+            display_sleeping_ ? display_sleep_brightness_ : backlightBrightness();
+        if (touch_was_initialized)
         {
-            preserveFirstError(esp_lcd_panel_disp_sleep(panel_, false), display_restore_error);
-            vTaskDelay(pdMS_TO_TICKS(kDisplaySleepDelayMilliseconds));
-            preserveFirstError(esp_lcd_panel_disp_on_off(panel_, true), display_restore_error);
-            preserveFirstError(setBacklightBrightness(saved_brightness), display_restore_error);
+            error = deinitializeTouch();
+            if (error != ESP_OK)
+            {
+                // deinitializeTouch() releases its object storage even when
+                // the I2C device removal fails. Restore the controller before
+                // returning so callers never retain a board with touch left
+                // unavailable after a failed sleep attempt.
+                (void)initializeTouch(touch_config);
+                disableLightSleepWakeup(config);
+                return error;
+            }
         }
+        if (display_was_initialized)
+        {
+            error = deinitializeDisplay();
+            if (error != ESP_OK)
+            {
+                if (touch_was_initialized)
+                    (void)initializeTouch(touch_config);
+                disableLightSleepWakeup(config);
+                return error;
+            }
+        }
+
+        // 启动轻度睡眠并获取可能的错误代码
+        const esp_err_t sleep_error = esp_light_sleep_start();
+        // 禁用轻度睡眠唤醒源
         disableLightSleepWakeup(config);
-        preserveFirstError(display_restore_error, first_error);
-        notify(8U, true, display_restore_error);
-        notify(9U, false, ESP_OK);
-        const esp_err_t peripheral_restore_error = restore_peripherals();
-        preserveFirstError(peripheral_restore_error, first_error);
-        notify(9U, true, peripheral_restore_error);
+        // 记录日志：轻度睡眠结束，并显示唤醒原因
         ESP_LOGI(
             kTag,
             "Light sleep finished, wakeup cause=%d",
             static_cast<int>(esp_sleep_get_wakeup_cause()));
-        return first_error;
+
+        if (!display_was_initialized && !touch_was_initialized)
+            return sleep_error;
+
+        if (display_was_initialized)
+        {
+            DisplayConfig display_config{};
+            display_config.frame_buffer_count = display_frame_buffer_count;
+            display_config.read_display_id = display_read_display_id;
+            error = initializeDisplay(display_config);
+            if (error == ESP_OK)
+                error = setBacklightBrightness(display_brightness);
+        }
+        if (error == ESP_OK && touch_was_initialized)
+            error = initializeTouch(touch_config);
+        if (error != ESP_OK)
+            ESP_LOGE(kTag, "Display/touch restore after light sleep failed: %s",
+                     esp_err_to_name(error));
+        return sleep_error != ESP_OK ? sleep_error : error;
     }
 
     esp_err_t Board::enterDeepSleep()
@@ -666,10 +604,12 @@ esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
     }
 
     esp_err_t Board::enterDeepSleep(const DeepSleepConfig &config,
-                                   SleepProgressCallback progress, void *context)
+                                    SleepProgressCallback progress, void *context)
     {
-        const auto notify = [&](std::uint8_t step, bool complete, esp_err_t result) {
-            if (progress != nullptr) progress(step, complete, result, context);
+        const auto notify = [&](std::uint8_t step, bool complete, esp_err_t result)
+        {
+            if (progress != nullptr)
+                progress(step, complete, result, context);
         };
         notify(0, false, ESP_OK);
         if (!initialized_)
@@ -695,18 +635,31 @@ esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
             void *context;
         } preparation{progress, context};
         const auto preparation_progress = [](ShipModeStep step, bool complete,
-                                             esp_err_t result, void *argument) {
+                                             esp_err_t result, void *argument)
+        {
             const auto &state = *static_cast<PreparationProgress *>(argument);
-            if (state.callback == nullptr) return;
+            if (state.callback == nullptr)
+                return;
             std::uint8_t row;
             switch (step)
             {
-            case ShipModeStep::sd_card: row = 1U; break;
-            case ShipModeStep::camera: row = 2U; break;
-            case ShipModeStep::touch: row = 3U; break;
-            case ShipModeStep::audio: row = 4U; break;
-            case ShipModeStep::lora: row = 5U; break;
-            default: return;
+            case ShipModeStep::sd_card:
+                row = 1U;
+                break;
+            case ShipModeStep::camera:
+                row = 2U;
+                break;
+            case ShipModeStep::touch:
+                row = 3U;
+                break;
+            case ShipModeStep::audio:
+                row = 4U;
+                break;
+            case ShipModeStep::lora:
+                row = 5U;
+                break;
+            default:
+                return;
             }
             state.callback(row, complete, result, state.context);
         };
@@ -811,6 +764,22 @@ esp_err_t Board::enterShipMode(std::uint32_t timeout_ms,
         if (!enabled && isLoraInitialized())
             return ESP_ERR_INVALID_STATE;
         return setExpanderOutput(pins::loraPowerEnable, enabled);
+    }
+
+    esp_err_t Board::setC5AudioLcdEnabled(bool enabled)
+    {
+        if (!enabled && isLoraInitialized())
+            return ESP_ERR_INVALID_STATE;
+        const esp_err_t error =
+            setExpanderOutput(pins::c5audiolcdPowerEnable, enabled);
+        if (error == ESP_OK)
+            c5_audio_lcd_enabled_ = enabled;
+        return error;
+    }
+
+    bool Board::isC5AudioLcdEnabled() const noexcept
+    {
+        return c5_audio_lcd_enabled_;
     }
 
     esp_err_t Board::resetTouchController()

@@ -22,6 +22,7 @@ constexpr gpio_num_t i2sMasterClock = GPIO_NUM_13;
 constexpr std::uint16_t xl9555Address = 0x20;
 constexpr std::uint8_t speakerControl = 0;
 constexpr std::uint8_t sdPowerEnable = 1;
+constexpr std::uint8_t c5audiolcdPowerEnable = 2; // esp32c5 audio display
 constexpr std::uint8_t lcdReset = 3;
 constexpr std::uint8_t touchReset = 4;
 constexpr std::uint8_t loraPowerEnable = 5;

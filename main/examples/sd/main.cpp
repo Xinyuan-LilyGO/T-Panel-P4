@@ -6,7 +6,18 @@
 #include <esp_err.h>
 #include <esp_log.h>
 
+#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
 #include <bsp/t_panel_p4_standard.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_standard
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
+#include <bsp/t_panel_p4_round.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
+#include <bsp/t_panel_p4_rect.hpp>
+#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
+#else
+#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#endif
 
 namespace
 {
@@ -83,12 +94,12 @@ esp_err_t readAndVerifyTestFile(const char *path)
 
 esp_err_t runExample()
 {
-    bsp::t_panel_p4_standard::Board board;
+    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
     esp_err_t result = board.initialize();
     if (result != ESP_OK)
         return result;
 
-    bsp::t_panel_p4_standard::SdCardConfig config{};
+    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::SdCardConfig config{};
     config.mount_point = "/sdcard";
     config.format_if_mount_failed = false;
 

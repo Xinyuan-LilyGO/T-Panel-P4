@@ -1,5 +1,3 @@
-#include "core/lv_obj_pos.h"
-#include "misc/lv_area.h"
 #include "page_common.h"
 
 #include <stdbool.h>
@@ -41,9 +39,11 @@ static lv_obj_t *s_settings_popup_x;
 static lv_obj_t *s_brightness_slider;
 static lv_obj_t *s_brightness_value;
 static lv_timer_t *s_monitor_timer;
+static lv_obj_t *s_monitor_scroll;
 static lv_obj_t *s_monitor_lines[12];
 static lv_obj_t *s_monitor_names[12];
 static lv_obj_t *s_monitor_values[12];
+static lv_obj_t *s_charger_toggle;
 static lv_obj_t *s_check_lines[8];
 static lv_obj_t *s_check_names[8];
 static lv_obj_t *s_check_values[8];
@@ -172,21 +172,18 @@ extern "C" void settings_sleep_progress_reset(std::uint8_t mode)
     static const char *const deep_names[] = {
         "CONFIG WAKEUP", "SD CARD", "CAMERA", "TOUCH", "AUDIO", "LORA",
         "DISPLAY", "RELEASE RESOURCES", "HOLD OUTPUTS LOW", "ENTER DEEP SLEEP"};
-    static const char *const light_names[] = {
-        "USB MSC", "SD CARD", "CAMERA", "AUDIO", "LORA", "CONFIG WAKEUP",
-        "SUSPEND DISPLAY", "ENTER LIGHT SLEEP", "RESTORE DISPLAY",
-        "RESTORE SYSTEM"};
-    const char *const *names = mode == 0U ? deep_names : light_names;
-    s_flow_count = 10U;
+    // Light sleep uses a confirmation-only dialog. Its progress rows are
+    // intentionally hidden; the action itself is confirmed with YES.
+    s_flow_count = mode == 0U ? 10U : 0U;
     for (std::uint8_t index = 0; index < kFlowUiCapacity; ++index)
     {
         s_ship_state[index].store(0U);
         s_ship_result[index].store(ESP_OK);
         if (s_ship_steps[index] == NULL)
             continue;
-        if (index < s_flow_count)
+        if (mode == 0U)
         {
-            lv_label_set_text(s_ship_names[index], names[index]);
+            lv_label_set_text(s_ship_names[index], deep_names[index]);
             lv_label_set_text(s_ship_steps[index], "WAITING");
             lv_obj_set_style_text_color(s_ship_steps[index],
                                         lv_color_hex(CYBER_YELLOW_GREEN), 0);
@@ -509,6 +506,53 @@ static void settings_monitor_refresh(void)
         set_monitor_value(0U, "UNAVAILABLE");
 }
 
+static void settings_charger_toggle_refresh(void)
+{
+    if (s_charger_toggle == NULL)
+        return;
+
+    bool enabled = false;
+    const esp_err_t result = settings_control_get_charger_enabled(&enabled);
+    lv_obj_t *label = lv_obj_get_child(s_charger_toggle, 0);
+    if (label == NULL)
+        return;
+
+    if (result == ESP_OK)
+    {
+        lv_label_set_text(label, enabled ? "CHARGER OFF" : "CHARGER ON");
+        lv_obj_set_style_text_color(label, lv_color_hex(CYBER_GREEN), 0);
+    }
+    else
+    {
+        lv_label_set_text(label, "CHARGER ERROR");
+        lv_obj_set_style_text_color(label, lv_color_hex(CYBER_MAGENTA), 0);
+    }
+}
+
+static void settings_charger_toggle_cb(lv_event_t *event)
+{
+    (void)event;
+    bool enabled = false;
+    if (settings_control_get_charger_enabled(&enabled) != ESP_OK)
+    {
+        settings_charger_toggle_refresh();
+        return;
+    }
+
+    const esp_err_t result = settings_control_set_charger_enabled(!enabled);
+    if (result != ESP_OK)
+    {
+        lv_obj_t *label = lv_obj_get_child(s_charger_toggle, 0);
+        if (label != NULL)
+        {
+            lv_label_set_text_fmt(label, "CHARGER FAILED: %s", esp_err_to_name(result));
+            lv_obj_set_style_text_color(label, lv_color_hex(CYBER_MAGENTA), 0);
+        }
+        return;
+    }
+    settings_charger_toggle_refresh();
+}
+
 static void settings_monitor_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -821,6 +865,8 @@ static void settings_popup_show(const char *title, const char *body,
     lv_obj_add_flag(s_wifi_password, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_wifi_results, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_wifi_close, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_monitor_scroll, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_charger_toggle, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_brightness_slider, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_brightness_value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_settings_popup_x, LV_OBJ_FLAG_HIDDEN);
@@ -963,6 +1009,9 @@ static void settings_monitor_cb(lv_event_t *event)
         lv_obj_add_flag(s_settings_popup_alt, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_settings_popup_x, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_settings_popup_message, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_monitor_scroll, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_scroll_to_y(s_monitor_scroll, 0, LV_ANIM_OFF);
+        lv_obj_clear_flag(s_charger_toggle, LV_OBJ_FLAG_HIDDEN);
         for (size_t index = 0; index < 12U; ++index)
         {
             lv_obj_clear_flag(s_monitor_lines[index], LV_OBJ_FLAG_HIDDEN);
@@ -970,6 +1019,7 @@ static void settings_monitor_cb(lv_event_t *event)
             lv_obj_clear_flag(s_monitor_values[index], LV_OBJ_FLAG_HIDDEN);
         }
         settings_monitor_refresh();
+        settings_charger_toggle_refresh();
         if (s_monitor_timer != NULL)
             lv_timer_del(s_monitor_timer);
         s_monitor_timer = lv_timer_create(settings_monitor_timer_cb, 1000, NULL);
@@ -1137,6 +1187,9 @@ static lv_obj_t *settings_category(lv_obj_t *root, const char *name,
 static void settings_popup_create(lv_obj_t *root)
 {
     s_settings_popup = lv_obj_create(root);
+    // Keep dialogs anchored to the settings viewport.
+    lv_obj_add_flag(s_settings_popup, LV_OBJ_FLAG_FLOATING);
+    lv_obj_remove_flag(s_settings_popup, LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_set_size(s_settings_popup, 720, 720);
     lv_obj_set_pos(s_settings_popup, 0, 0);
     lv_obj_set_style_bg_color(s_settings_popup, lv_color_hex(CYBER_BG), 0);
@@ -1249,24 +1302,34 @@ static void settings_popup_create(lv_obj_t *root)
                         LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_flag(s_brightness_value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_brightness_slider, LV_OBJ_FLAG_HIDDEN);
+    s_monitor_scroll = lv_obj_create(s_settings_popup_body);
+    lv_obj_set_size(s_monitor_scroll, 512, 400);
+    lv_obj_set_pos(s_monitor_scroll, 24, 72);
+    settings_panel_style(s_monitor_scroll, CYBER_BG);
+    lv_obj_add_flag(s_monitor_scroll, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_monitor_scroll, LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_scroll_dir(s_monitor_scroll, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_monitor_scroll, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_pad_bottom(s_monitor_scroll, 8, 0);
+    lv_obj_add_flag(s_monitor_scroll, LV_OBJ_FLAG_HIDDEN);
     static lv_point_precise_t separator_points[] = {{0, 0}, {512, 0}};
     for (size_t index = 0; index < 12U; ++index)
     {
-        const lv_coord_t row_y = 74 + (lv_coord_t)index * 40;
-        s_monitor_names[index] = lv_label_create(s_settings_popup_body);
-        lv_obj_set_pos(s_monitor_names[index], 24, row_y);
+        const lv_coord_t row_y = (lv_coord_t)index * 40;
+        s_monitor_names[index] = lv_label_create(s_monitor_scroll);
+        lv_obj_set_pos(s_monitor_names[index], 0, row_y);
         lv_obj_set_size(s_monitor_names[index], 260, 32);
         lv_obj_set_style_text_font(s_monitor_names[index], &lv_font_ShareTechMono1_20, 0);
         lv_obj_set_style_text_color(s_monitor_names[index], lv_color_hex(CYBER_TEXT), 0);
         lv_obj_set_style_text_align(s_monitor_names[index], LV_TEXT_ALIGN_LEFT, 0);
-        s_monitor_values[index] = lv_label_create(s_settings_popup_body);
-        lv_obj_set_pos(s_monitor_values[index], 300, row_y);
+        s_monitor_values[index] = lv_label_create(s_monitor_scroll);
+        lv_obj_set_pos(s_monitor_values[index], 276, row_y);
         lv_obj_set_size(s_monitor_values[index], 236, 32);
         lv_obj_set_style_text_font(s_monitor_values[index], &lv_font_ShareTechMono1_20, 0);
         lv_obj_set_style_text_color(s_monitor_values[index], lv_color_hex(CYBER_YELLOW_GREEN), 0);
         lv_obj_set_style_text_align(s_monitor_values[index], LV_TEXT_ALIGN_RIGHT, 0);
-        s_monitor_lines[index] = lv_line_create(s_settings_popup_body);
-        lv_obj_set_pos(s_monitor_lines[index], 24, row_y + 34);
+        s_monitor_lines[index] = lv_line_create(s_monitor_scroll);
+        lv_obj_set_pos(s_monitor_lines[index], 0, row_y + 34);
         lv_obj_set_size(s_monitor_lines[index], 512, 1);
         lv_line_set_points(s_monitor_lines[index], separator_points, 2);
         lv_obj_set_style_line_width(s_monitor_lines[index], 1, 0);
@@ -1276,6 +1339,9 @@ static void settings_popup_create(lv_obj_t *root)
         lv_obj_add_flag(s_monitor_names[index], LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_monitor_values[index], LV_OBJ_FLAG_HIDDEN);
     }
+    s_charger_toggle = settings_button(s_settings_popup_body, "CHARGER OFF", 24, 486, 512, 48,
+                                       settings_charger_toggle_cb, NULL, CYBER_GREEN);
+    lv_obj_add_flag(s_charger_toggle, LV_OBJ_FLAG_HIDDEN);
     static lv_point_precise_t check_separator_points[] = {{0, 0}, {512, 0}};
     for (std::size_t index = 0; index < kCheckUiCount; ++index)
     {
@@ -1423,6 +1489,8 @@ static void settings_popup_create(lv_obj_t *root)
     lv_obj_set_scrollbar_mode(s_wifi_results, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_flag(s_wifi_results, LV_OBJ_FLAG_HIDDEN);
     s_wifi_keyboard = lv_keyboard_create(root);
+    lv_obj_add_flag(s_wifi_keyboard, LV_OBJ_FLAG_FLOATING);
+    lv_obj_remove_flag(s_wifi_keyboard, LV_OBJ_FLAG_SCROLL_CHAIN);
     const lv_style_selector_t keyboard_pressed = static_cast<lv_style_selector_t>(
         static_cast<uint32_t>(LV_PART_ITEMS) |
         static_cast<uint32_t>(LV_STATE_PRESSED));
@@ -1452,8 +1520,9 @@ static void settings_page_create(Page *page)
     lv_obj_set_style_bg_color(page->root, lv_color_hex(CYBER_BG), 0);
     lv_obj_set_style_pad_all(page->root, 0, 0);
     lv_obj_set_scrollbar_mode(page->root, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_add_flag(page->root, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(page->root, LV_DIR_VER);
+    lv_obj_remove_flag(page->root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(page->root, LV_DIR_NONE);
+    lv_obj_scroll_to_y(page->root, 0, LV_ANIM_OFF);
 
     lv_obj_t *connection = settings_category(page->root, "CONNECTION", 70, 180, CYBER_CYAN);
     settings_button(connection, "WIFI", 18, 52, 628, 52, settings_connection_cb,
@@ -1465,18 +1534,26 @@ static void settings_page_create(Page *page)
     settings_button(monitor, "CHARGE / BATTERY STATUS", 18, 52, 628, 52,
                     settings_monitor_cb, NULL, CYBER_GREEN);
 
-    lv_obj_t *system = settings_category(page->root, "SYSTEM", 400, 298, CYBER_YELLOW);
-    settings_button(system, "SD-MSC", 18, 48, 628, 36, settings_sd_msc_cb,
+    lv_obj_t *system = settings_category(page->root, "SYSTEM", 400, 260, CYBER_YELLOW);
+    // Scroll only the options, keeping the category title and frame fixed.
+    lv_obj_t *system_options = page_ui_panel(system, 12, 48, 640, 196, CYBER_PANEL);
+    settings_panel_style(system_options, CYBER_PANEL);
+    lv_obj_add_flag(system_options, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(system_options, LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_set_scroll_dir(system_options, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(system_options, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_pad_bottom(system_options, 4, 0);
+    settings_button(system_options, "SD-MSC", 6, 4, 628, 52, settings_sd_msc_cb,
                     NULL, CYBER_YELLOW);
-    settings_button(system, "DISPLAY BRIGHTNESS", 18, 86, 628, 36,
+    settings_button(system_options, "DISPLAY BRIGHTNESS", 6, 64, 628, 52,
                     settings_brightness_open_cb, NULL, CYBER_YELLOW);
-    settings_button(system, "SHIP MODE", 18, 124, 628, 36, settings_system_cb,
+    settings_button(system_options, "SHIP MODE", 6, 124, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_SHIP, CYBER_YELLOW);
-    settings_button(system, "DEEP SLEEP", 18, 162, 628, 36, settings_system_cb,
+    settings_button(system_options, "DEEP SLEEP", 6, 184, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_DEEP_SLEEP, CYBER_YELLOW);
-    settings_button(system, "LIGHT SLEEP", 18, 200, 628, 36, settings_system_cb,
+    settings_button(system_options, "LIGHT SLEEP", 6, 244, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_LIGHT_SLEEP, CYBER_YELLOW);
-    settings_button(system, "CHECK", 18, 238, 628, 36, settings_system_cb,
+    settings_button(system_options, "CHECK", 6, 304, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_CHECK, CYBER_YELLOW);
 
     lv_obj_t *footer_fw = page_ui_label(page->root,
@@ -1486,7 +1563,7 @@ static void settings_page_create(Page *page)
     lv_obj_t *footer_hw = page_ui_label(page->root,
                                      "HW  T-PANEL-P4-STANDARD",
                                      &lv_font_ShareTechMono1_16, CYBER_MUTED);
-    lv_obj_align(footer_hw, LV_ALIGN_BOTTOM_RIGHT, -28, -36);
+    lv_obj_align(footer_hw, LV_ALIGN_TOP_RIGHT, -28, 684);
     settings_popup_create(page->root);
 }
 

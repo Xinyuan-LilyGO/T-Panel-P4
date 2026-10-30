@@ -61,8 +61,8 @@ namespace factory::ui
                 return;
             }
 
-            // LVGL uses full-frame rendering, so pixel_map is a complete
-            // framebuffer. Submit it once after the full frame is ready.
+            // FULL mode supplies a complete screen-sized framebuffer. Submit
+            // it once after LVGL has rendered the frame.
             if (!lv_display_flush_is_last(display))
             {
                 lv_display_flush_ready(display);
@@ -142,7 +142,13 @@ namespace factory::ui
         {
             auto *port = static_cast<StandardLvglContext *>(
                 lv_indev_get_user_data(input_device));
-            if (port == nullptr || port->touch == nullptr)
+            // The BSP reconstructs the optional Jadard object after light
+            // sleep. Refresh this pointer on every read so LVGL can never
+            // retain a pointer to the pre-sleep object storage.
+            auto *touch = (port != nullptr && port->board != nullptr)
+                              ? port->board->touchController()
+                              : nullptr;
+            if (port == nullptr || touch == nullptr)
             {
                 input_data->state = LV_INDEV_STATE_RELEASED;
                 return;
@@ -150,8 +156,22 @@ namespace factory::ui
 
             pdl::touch::JadardTouchData report{};
             const pdl::Status status =
-                port->touch->readTouchData(report, kTouchTimeoutMs);
-            if (pdl::isError(status) || report.finger_count == 0U)
+                touch->readTouchData(report, kTouchTimeoutMs);
+            if (pdl::isError(status))
+            {
+                static TickType_t last_error_log{};
+                const TickType_t now = xTaskGetTickCount();
+                if (now - last_error_log >= pdMS_TO_TICKS(1000))
+                {
+                    ESP_LOGW(kTag, "Touch read failed: status=%d",
+                             static_cast<int>(status));
+                    last_error_log = now;
+                }
+                input_data->state = LV_INDEV_STATE_RELEASED;
+                return;
+            }
+
+            if (report.finger_count == 0U)
             {
                 input_data->state = LV_INDEV_STATE_RELEASED;
                 return;
@@ -173,6 +193,10 @@ namespace factory::ui
     void prepareStandardLvglPowerDown(bool stop_display)
     {
         lv_lock();
+        // The touch controller is destroyed immediately after this function
+        // returns. Stop LVGL's input timer while holding the LVGL lock so no
+        // readTouch callback can race with I2C device removal.
+        pauseLvglInputState();
         context.touch = nullptr;
         if (stop_display)
         {
@@ -195,17 +219,83 @@ namespace factory::ui
 
     void resumeStandardLvglDisplay()
     {
+        ESP_LOGI(kTag, "LVGL resume: enter");
         lv_lock();
+        ESP_LOGI(kTag, "LVGL resume: lock acquired");
         if (context.board != nullptr)
+        {
             context.touch = context.board->touchController();
+        }
         lv_display_t *display = lv_display_get_default();
+        ESP_LOGI(kTag, "LVGL resume: display=%p board_display=%d",
+                 static_cast<void *>(display),
+                 context.board != nullptr && context.board->isDisplayInitialized());
         if (display != nullptr && context.board != nullptr &&
             context.board->isDisplayInitialized())
         {
+            void *primary_buffer = context.board->frameBuffer(0);
+            void *secondary_buffer = context.board->frameBuffer(1);
+            ESP_LOGI(kTag, "LVGL resume: buffers primary=%p secondary=%p",
+                     primary_buffer, secondary_buffer);
+            if (primary_buffer == nullptr || secondary_buffer == nullptr)
+            {
+                ESP_LOGE(kTag, "LVGL display buffers unavailable after wake");
+                lv_unlock();
+                return;
+            }
+
+            constexpr std::size_t frame_buffer_size =
+                bsp::t_panel_p4_standard::Board::displayWidth *
+                bsp::t_panel_p4_standard::Board::displayHeight *
+                (bsp::t_panel_p4_standard::Board::displayBitsPerPixel / 8U);
+            // Board light-sleep recovery recreates the DPI framebuffers. LVGL
+            // must be pointed at the new allocations before the first flush.
+            lv_display_set_user_data(display, &context);
+            lv_display_set_buffers(
+                display,
+                primary_buffer,
+                secondary_buffer,
+                frame_buffer_size,
+                LV_DISPLAY_RENDER_MODE_DIRECT);
+            ESP_LOGI(kTag, "LVGL resume: buffers rebound");
+            // deinitializeDisplay() deleted the old DPI panel, so its
+            // refresh callback was deleted with it. Re-register the callback
+            // on the newly created panel before forcing the first flush;
+            // otherwise LVGL waits forever for a refresh semaphore that can
+            // no longer be signalled.
+            esp_lcd_dpi_panel_event_callbacks_t panel_callbacks{};
+            panel_callbacks.on_refresh_done = notifyRefreshDone;
+            const esp_err_t callback_error =
+                esp_lcd_dpi_panel_register_event_callbacks(
+                    context.board->displayPanel(),
+                    &panel_callbacks,
+                    context.refresh_semaphore);
+            ESP_LOGI(kTag, "LVGL resume: refresh callback result=%s",
+                     esp_err_to_name(callback_error));
+            if (callback_error != ESP_OK)
+            {
+                ESP_LOGE(kTag, "Register display refresh callback after wake failed: %s",
+                         esp_err_to_name(callback_error));
+                lv_unlock();
+                return;
+            }
+            resetLvglInputState();
+            ESP_LOGI(kTag, "LVGL resume: input state reset");
             context.display_powered_down = false;
             lv_timer_resume(lv_display_get_refr_timer(display));
+            ESP_LOGI(kTag, "LVGL resume: display refresh timer resumed");
+
+            // DPI resume deliberately starts from framebuffer zero.  LVGL
+            // may otherwise have no dirty area after the timer pause and the
+            // panel would keep scanning the reset framebuffer contents.
+            // Invalidate and submit one complete frame before returning to
+            // normal timer-driven refreshes.
+            // 使当前活动屏幕的整个区域失效，触发重绘
+            lv_obj_invalidate(lv_screen_active());
+            ESP_LOGI(kTag, "LVGL display binding restored after wake");
         }
         lv_unlock();
+        ESP_LOGI(kTag, "LVGL resume: exit");
     }
 
     esp_err_t initializeStandardLvgl(bsp::t_panel_p4_standard::Board &board)
@@ -288,9 +378,9 @@ namespace factory::ui
             "Register display refresh callback failed");
 
         static_assert(
-            bsp::t_panel_p4_standard::Board::displayBitsPerPixel == 16,
-            "Standard LVGL port requires an RGB565 framebuffer");
-        constexpr lv_color_format_t color_format = LV_COLOR_FORMAT_RGB565;
+            bsp::t_panel_p4_standard::Board::displayBitsPerPixel == 24,
+            "Standard LVGL port requires a 24-bit framebuffer");
+        constexpr lv_color_format_t color_format = LV_COLOR_FORMAT_RGB888;
         constexpr std::size_t frame_buffer_size =
             bsp::t_panel_p4_standard::Board::displayWidth *
             bsp::t_panel_p4_standard::Board::displayHeight *
@@ -305,16 +395,17 @@ namespace factory::ui
         port.display.primary_buffer = board.frameBuffer(0);
         port.display.secondary_buffer = board.frameBuffer(1);
         port.display.buffer_size_bytes = frame_buffer_size;
-        // Full-frame rendering avoids LVGL direct-mode dirty-area synchronization
-        // against the two scanout buffers, which can leave stale horizontal
-        // strips during frequent small UI updates.
+        // DPI resume always restarts from framebuffer zero.  Full-frame mode
+        // makes every flush self-contained and keeps both scanout buffers
+        // identical, so a stale second buffer cannot produce a shifted or
+        // partially recolored frame after wake.
         port.display.render_mode = LV_DISPLAY_RENDER_MODE_DIRECT;
         port.display.flush_callback = flushDisplay;
         port.display.flush_wait_callback = waitForDisplayRefresh;
         port.display.user_data = &context;
-    port.pointer_input.read_callback = readTouch;
-    port.pointer_input.user_data = &context;
-    port.create_handler_task = false;
-    return initializeLvgl(port);
-}
+        port.pointer_input.read_callback = readTouch;
+        port.pointer_input.user_data = &context;
+        port.create_handler_task = false;
+        return initializeLvgl(port);
+    }
 }
