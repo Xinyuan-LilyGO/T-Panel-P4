@@ -424,6 +424,9 @@ public:
     [[nodiscard]] esp_err_t readPowerStatus(
         pdl::charge::Axp517PowerStatus &status,
         std::uint32_t timeout_ms = 100);
+    [[nodiscard]] esp_err_t readPowerModuleEnableStatus(
+        pdl::charge::Axp517ModuleEnableStatus &status,
+        std::uint32_t timeout_ms = 100);
     [[nodiscard]] esp_err_t setChargerEnabled(
         bool enabled,
         std::uint32_t timeout_ms = 100);

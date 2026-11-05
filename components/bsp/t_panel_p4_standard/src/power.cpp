@@ -16,6 +16,16 @@ constexpr UBaseType_t kPowerTaskPriority = 5;
 constexpr std::uint32_t kPowerTaskStopTimeoutMs = 500;
 constexpr std::uint32_t kPowerIrqRearmDelayMs = 5;
 
+// Conservative defaults for the board's 1900 mAh, 3.7 V single-cell Li-ion battery.
+constexpr std::uint16_t kInputCurrentLimitMa = 1500;
+constexpr std::uint16_t kInputVoltageLimitMv = 4600;
+constexpr std::uint16_t kMinimumSystemVoltageMv = 3500;
+constexpr std::uint16_t kChargeVoltageMv = 4200;
+constexpr std::uint16_t kChargeCurrentMa = 512;
+constexpr std::uint16_t kPrechargeCurrentMa = 128;
+constexpr std::uint16_t kTrickleCurrentMa = 64;
+constexpr std::uint16_t kTerminationCurrentMa = 128;
+
 esp_err_t toEspError(pdl::Status status)
 {
     return bsp::t_panel_p4_standard::detail::toEspError(status);
@@ -64,6 +74,46 @@ esp_err_t Board::initializePower(const PowerConfig &config)
     axp517_.emplace(*axp517_transport_);
 
     esp_err_t error = pdlError(axp517_->initialize(), "initialize AXP517");
+    if (error == ESP_OK)
+    {
+        error = pdlError(axp517_->setInputVoltageLimitMv(kInputVoltageLimitMv), "configure AXP517 input voltage limit");
+    }
+    if (error == ESP_OK)
+    {
+        error = pdlError(axp517_->setInputCurrentLimitMa(kInputCurrentLimitMa), "configure AXP517 input current limit");
+    }
+    if (error == ESP_OK)
+    {
+        error = pdlError(axp517_->setMinimumSystemVoltageMv(kMinimumSystemVoltageMv), "configure AXP517 minimum system voltage");
+    }
+    if (error == ESP_OK)
+    {
+        error = pdlError(axp517_->setChargeVoltageMv(kChargeVoltageMv), "configure AXP517 charge voltage");
+    }
+    if (error == ESP_OK)
+    {
+        error = pdlError(axp517_->setChargeCurrentMa(kChargeCurrentMa), "configure AXP517 charge current");
+    }
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setPrechargeCurrentMa(kPrechargeCurrentMa), "configure AXP517 precharge current");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setTrickleCurrentMa(kTrickleCurrentMa), "configure AXP517 trickle current");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setTerminationCurrentMa(kTerminationCurrentMa), "configure AXP517 termination current");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setChargeTerminationEnabled(true), "enable AXP517 charge termination");
+    if (error == ESP_OK)
+    {
+        error = pdlError(
+            axp517_->setBoostEnabled(false),
+            "disable AXP517 boost");
+    }
+    if (error == ESP_OK)
+    {
+        error = pdlError(
+            axp517_->configureDischarge(true, true, true, 3U),
+            "configure AXP517 discharge");
+    }
     if (error != ESP_OK)
         return deinitializePower(), error;
 
@@ -85,6 +135,14 @@ esp_err_t Board::initializePower(const PowerConfig &config)
             axp517_->setBatteryDetectionEnabled(true),
             "enable AXP517 battery detection");
     }
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setBuckEnabled(true), "enable AXP517 buck");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setChargerEnabled(true), "enable AXP517 charger");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setBc12DetectionEnabled(true), "enable AXP517 BC1.2 detection");
+    if (error == ESP_OK)
+        error = pdlError(axp517_->setTypeCDetectionEnabled(true), "enable AXP517 Type-C detection");
     if (error == ESP_OK)
     {
         error = pdlError(
@@ -254,6 +312,17 @@ esp_err_t Board::readPowerStatus(
     return pdlError(
         axp517_->readPowerStatus(status, timeout_ms),
         "read AXP517 power status");
+}
+
+esp_err_t Board::readPowerModuleEnableStatus(
+    pdl::charge::Axp517ModuleEnableStatus &status,
+    std::uint32_t timeout_ms)
+{
+    if (!isPowerInitialized())
+        return ESP_ERR_INVALID_STATE;
+    return pdlError(
+        axp517_->readModuleEnableStatus(status, timeout_ms),
+        "read AXP517 module enable status");
 }
 
 esp_err_t Board::setChargerEnabled(bool enabled, std::uint32_t timeout_ms)
