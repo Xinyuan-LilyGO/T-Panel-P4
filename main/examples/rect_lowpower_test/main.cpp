@@ -10,9 +10,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <bsp/t_panel_p4_rect.hpp>
+#include <bsp/board.hpp>
 #include <pdl/core/status.hpp>
-#include <pdl/drivers/audio/es7210/es7210.hpp>
 #include <pdl/drivers/motor/drv2605/drv2605.hpp>
 #include <pdl/drivers/sensor/qmc6309/qmc6309.hpp>
 #include <pdl/drivers/sensor/qmi8658c/qmi8658c.hpp>
@@ -23,7 +22,7 @@
 
 namespace
 {
-    constexpr char kTag[] = "lcd_ili9882";
+    constexpr char kTag[] = "rect_lowpower_test";
     constexpr std::array<std::uint16_t, 5> kRgb565Bars{
         0xF800,
         0x07E0,
@@ -60,14 +59,10 @@ namespace
     }
 
     void deinitializeAdditionalDevices(
-        pdl::audio::Es7210 &es7210,
         pdl::motor::Drv2605 &drv2605,
         pdl::sensor::Qmc6309 &qmc6309,
         pdl::sensor::Qmi8658c &qmi8658c)
     {
-        const pdl::Status es7210_status = es7210.deinitialize();
-        if (pdl::isError(es7210_status))
-            ESP_LOGW(kTag, "ES7210 deinitialization failed: %s", pdl::statusName(es7210_status));
         const pdl::Status drv2605_status = drv2605.deinitialize();
         if (pdl::isError(drv2605_status))
             ESP_LOGW(kTag, "DRV2605 deinitialization failed: %s", pdl::statusName(drv2605_status));
@@ -80,7 +75,6 @@ namespace
     }
 
     esp_err_t enterPanelAndTouchSleep(
-        pdl::audio::Es7210 &es7210,
         pdl::motor::Drv2605 &drv2605,
         pdl::sensor::Qmc6309 &qmc6309,
         pdl::sensor::Qmi8658c &qmi8658c)
@@ -92,7 +86,7 @@ namespace
             kTag,
             "ILI9882 touch controller is unavailable");
 
-        const pdl::Status touch_status = touch->setState(
+        const pdl::Status touch_status = touch->native().setState(
             pdl::touch::Ili9882State::sleeping);
         ESP_RETURN_ON_FALSE(
             pdl::isOk(touch_status),
@@ -102,11 +96,11 @@ namespace
             pdl::statusName(touch_status));
         vTaskDelay(pdMS_TO_TICKS(1000));
 
-        board.deinitializeCamera();
+        ESP_RETURN_ON_ERROR(board.deinitializeCamera(), kTag, "release camera failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        board.deinitializeAudio();
+        ESP_RETURN_ON_ERROR(board.deinitializeAudio(), kTag, "release audio failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        board.deinitializeSdCard();
+        ESP_RETURN_ON_ERROR(board.deinitializeSdCard(), kTag, "release SD card failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         ESP_RETURN_ON_ERROR(
@@ -120,17 +114,17 @@ namespace
             kTag,
             "turn off backlight failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        board.deinitializeDisplay();
+        ESP_RETURN_ON_ERROR(board.deinitializeDisplay(), kTag, "release display failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        board.setDisplayPowerEnabled(false);
+        ESP_RETURN_ON_ERROR(board.setDisplayPowerEnabled(false), kTag, "disable display power failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
 
-        board.setSpeakerEnabled(false);
+        ESP_RETURN_ON_ERROR(board.setSpeakerEnabled(false), kTag, "disable speaker failed");
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         // All devices attached to the shared I2C bus must be released before
         // Board::enterDeepSleep() tears the bus down.
-        deinitializeAdditionalDevices(es7210, drv2605, qmc6309, qmi8658c);
+        deinitializeAdditionalDevices(drv2605, qmc6309, qmi8658c);
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         ESP_LOGI(kTag, "ILI9882 display and touch entered sleep mode");
@@ -146,9 +140,7 @@ namespace
 
     esp_err_t runExample()
     {
-        ESP_RETURN_ON_ERROR(board.initialize(), kTag, "RECT BSP initialization failed");
-
-        // The BSP owns the shared-bus ES8389, SGM38121 and OV2710 lifecycles.
+        // The BSP owns ES8389/ES7210 audio, SGM38121 and OV2710 lifecycles.
         ESP_RETURN_ON_ERROR(
             board.initializeAudio(),
             kTag,
@@ -172,19 +164,6 @@ namespace
 
         // The remaining devices are initialized directly on the same bus.
         pdl::esp_idf::TaskDelay task_delay;
-        pdl::esp_idf::I2cDevice es7210_transport(
-            *i2c_bus,
-            pdl::audio::Es7210::defaultI2cAddress,
-            pdl::audio::Es7210::defaultI2cFrequencyHz);
-        pdl::audio::Es7210 es7210(es7210_transport);
-        const pdl::Status es7210_status = es7210.initialize();
-        ESP_RETURN_ON_FALSE(
-            pdl::isOk(es7210_status),
-            ESP_FAIL,
-            kTag,
-            "ES7210 initialization failed: %s",
-            pdl::statusName(es7210_status));
-
         pdl::esp_idf::I2cDevice drv2605_transport(
             *i2c_bus,
             pdl::motor::Drv2605::defaultI2cAddress,
@@ -228,8 +207,10 @@ namespace
         ESP_LOGI(
             kTag,
             "ES7210, ES8389, SGM38121, OV2710, DRV2605, QMC6309 and QMI8658C initialized");
+        bsp::DisplayConfig display_config{};
+        display_config.in_color_format = LCD_COLOR_FMT_RGB565;
         ESP_RETURN_ON_ERROR(
-            board.initializeDisplay(),
+            board.initializeDisplay(display_config),
             kTag,
             "ILI9882 display initialization failed");
         bsp::t_panel_p4_rect::TouchConfig touch_config{};
@@ -246,7 +227,7 @@ namespace
 
         // ESP_LOGI(kTag, "ILI9882 720x1440 color bars ready through RECT BSP");
         vTaskDelay(pdMS_TO_TICKS(5000));
-        return enterPanelAndTouchSleep(es7210, drv2605, qmc6309, qmi8658c);
+        return enterPanelAndTouchSleep(drv2605, qmc6309, qmi8658c);
     }
 }
 

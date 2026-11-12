@@ -1,0 +1,11 @@
+menu "Factory round example"
+
+config FACTORY_ROUND_LCD_USE_TE
+    bool "Synchronize LVGL flushes with LCD tearing effect"
+    default n
+    help
+        Wait for the round panel's tearing-effect edge before switching the
+        active full-screen framebuffer. Disable this only when the panel is
+        wired without a TE signal.
+
+endmenu

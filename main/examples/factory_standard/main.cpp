@@ -14,8 +14,8 @@
 #include <sdmmc_cmd.h>
 #include <driver/gpio.h>
 
-#include <bsp/t_panel_p4_standard.hpp>
-#include <bsp/t_panel_p4_standard_pins.hpp>
+#include <bsp/board.hpp>
+#include <bsp/pins.hpp>
 #include <esp32c5_connectivity/esp32c5_connectivity.hpp>
 #include <ui/core/standard_lvgl_port.hpp>
 #include <ui/core/status_bar.h>
@@ -164,15 +164,23 @@ namespace
                                 : ESP_ERR_INVALID_STATE;
         logDeviceResult("AXP517", app.axp517_result);
 
-        bsp::t_panel_p4_standard::SdCardConfig sd_config{};
-        /* Keep the removable-card bus conservative for reliable camera writes. */
-        sd_config.maximum_frequency_khz = 20000U;
-        app.sd_card_result = app.board.initializeSdCard(sd_config);
+        // Board::initialize() owns peripheral bring-up. Read its results here;
+        // the BSP's default SD clock is already the conservative 20 MHz.
+        app.sd_card_result = app.board.isSdCardInitialized()
+                                 ? ESP_OK
+                                 : ESP_ERR_INVALID_STATE;
         logDeviceResult("SD card", app.sd_card_result);
 
-        /* LoRa is initialized when its page is entered. */
-        app.lora_result = ESP_ERR_INVALID_STATE;
+        app.lora_result = app.board.isLoraInitialized()
+                              ? ESP_OK
+                              : ESP_ERR_INVALID_STATE;
+        logDeviceResult("LoRa LR2021", app.lora_result);
+        const esp_err_t camera_result = app.board.isCameraInitialized()
+                                            ? ESP_OK
+                                            : ESP_ERR_INVALID_STATE;
+        logDeviceResult("camera OV2710", camera_result);
 
+        // ESP32-C5 connectivity is owned by the application, outside Board.
         app.esp32c5_config = {};
         app.esp32c5_result = app.esp32c5.initialize(app.esp32c5_config);
         logDeviceResult("ESP32-C5 SDIO", app.esp32c5_result);
@@ -222,7 +230,7 @@ namespace
         audio_config.codec = AudioCodecChip::es8389;
         audio_config.sample_rate_hz = 48000U;
         audio_config.word_length = AudioWordLength::bits16;
-        audio_config.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+        audio_config.mclk_multiple = I2S_MCLK_MULTIPLE_384;
         audio_config.output_volume_db = -12.0F;
         audio_config.microphone_gain = AudioMicrophoneGain::db24_5;
         /* Create the codec in full-duplex mode for ES8389 compatibility, then
@@ -231,22 +239,25 @@ namespace
         audio_config.enable_capture = true;
         audio_config.enable_speaker = true;
         audio_config.no_dac_reference = true;
-        audio_config.dma_descriptor_count  = 4;
+        audio_config.dma_descriptor_count = 4;
         audio_config.dma_frames_per_descriptor = 512;
-        app.audio_result = app.board.initializeAudio(audio_config);
+        // The unified BSP entry point has opened audio with its defaults.
+        // Reconfigure it explicitly to retain the factory codec/DMA settings.
+        app.audio_result = app.board.reconfigureAudio(audio_config);
         if (app.audio_result == ESP_OK)
             app.audio_result = app.board.setAudioCaptureEnabled(false);
         logDeviceResult("audio ES8389", app.audio_result);
 
-        ESP_LOGI(kTag, "camera OV2710 initialization: deferred until Camera page");
+        ESP_LOGI(kTag, "camera OV2710 streaming: starts when entering Camera page");
 
         ESP_LOGI(
             kTag,
-            "device initialization summary: AXP517=%s, LORA=DEFERRED, ESP32-C5=%s, WIFI=%s, camera=DEFERRED, SD=%s, ES8389=%s",
+            "device initialization summary: AXP517=%s, LORA=%s, ESP32-C5=%s, WIFI=%s, camera=%s, SD=%s, ES8389=%s",
             esp_err_to_name(app.axp517_result),
             esp_err_to_name(app.lora_result),
             esp_err_to_name(app.esp32c5_result),
             esp_err_to_name(app.wifi_result),
+            esp_err_to_name(camera_result),
             esp_err_to_name(app.sd_card_result),
             esp_err_to_name(app.audio_result));
     }
@@ -278,13 +289,26 @@ extern "C" esp_err_t settings_control_read_power(char *buffer, size_t buffer_siz
     const char *charge_state = "UNKNOWN";
     switch (power_status.charge_state)
     {
-    case pdl::charge::Axp517ChargeState::trickle: charge_state = "TRICKLE"; break;
-    case pdl::charge::Axp517ChargeState::precharge: charge_state = "PRECHARGE"; break;
-    case pdl::charge::Axp517ChargeState::constant_current: charge_state = "CONSTANT CURRENT"; break;
-    case pdl::charge::Axp517ChargeState::constant_voltage: charge_state = "CONSTANT VOLTAGE"; break;
-    case pdl::charge::Axp517ChargeState::complete: charge_state = "COMPLETE"; break;
-    case pdl::charge::Axp517ChargeState::not_charging: charge_state = "NOT CHARGING"; break;
-    default: break;
+    case pdl::charge::Axp517ChargeState::trickle:
+        charge_state = "TRICKLE";
+        break;
+    case pdl::charge::Axp517ChargeState::precharge:
+        charge_state = "PRECHARGE";
+        break;
+    case pdl::charge::Axp517ChargeState::constant_current:
+        charge_state = "CONSTANT CURRENT";
+        break;
+    case pdl::charge::Axp517ChargeState::constant_voltage:
+        charge_state = "CONSTANT VOLTAGE";
+        break;
+    case pdl::charge::Axp517ChargeState::complete:
+        charge_state = "COMPLETE";
+        break;
+    case pdl::charge::Axp517ChargeState::not_charging:
+        charge_state = "NOT CHARGING";
+        break;
+    default:
+        break;
     }
     const unsigned battery_power_mw = static_cast<unsigned>(voltage) *
                                       static_cast<unsigned>(current < 0 ? -current : current) / 1000U;
@@ -436,10 +460,10 @@ extern "C" esp_err_t settings_control_run_check(char *buffer, size_t buffer_size
     pdl::Status touch_status = pdl::Status::not_initialized;
     if (touch != nullptr)
     {
-        touch_status = touch->readChipId(touch_id);
+        touch_status = touch->native().readChipId(touch_id);
         if (pdl::isOk(touch_status))
         {
-            pdl::touch::JadardTouchData touch_data{};
+            bsp::TouchData touch_data{};
             touch_status = touch->readTouchData(touch_data);
         }
     }
@@ -593,45 +617,33 @@ extern "C" esp_err_t settings_control_set_sd_msc_enabled(bool enabled)
 
 extern "C" esp_err_t settings_control_enter_ship_mode(void)
 {
-    const auto progress = [](bsp::t_panel_p4_standard::ShipModeStep step,
-                             bool complete, esp_err_t result, void *) {
-        settings_ship_progress_update(static_cast<std::uint8_t>(step), complete, result);
-        // Let the LVGL task present each state while hardware is still alive.
-        if (step != bsp::t_panel_p4_standard::ShipModeStep::display &&
-            step != bsp::t_panel_p4_standard::ShipModeStep::finalize)
-            vTaskDelay(pdMS_TO_TICKS(150));
-        if (!complete && step == bsp::t_panel_p4_standard::ShipModeStep::touch)
-            factory::ui::prepareStandardLvglPowerDown(false);
-        if (!complete && step == bsp::t_panel_p4_standard::ShipModeStep::axp517)
-            factory::ui::prepareStandardLvglPowerDown(true);
-    };
-    const esp_err_t result = application.board.enterShipMode(100, progress, nullptr);
-    if (result != ESP_OK && application.board.isDisplayInitialized())
-    {
-        if (!application.board.isTouchInitialized())
-            (void)application.board.initializeTouch();
-        factory::ui::resumeStandardLvglDisplay();
-    }
-    return result;
+    return application.board.enterShipMode();
 }
 
 extern "C" esp_err_t settings_control_enter_deep_sleep(void)
 {
-    const auto progress = [](std::uint8_t step, bool complete, esp_err_t error, void *) {
-        settings_sleep_progress_update(step, complete, error);
-        vTaskDelay(pdMS_TO_TICKS(150));
-        if (step == 3U && !complete)
-            factory::ui::prepareStandardLvglPowerDown(false);
-        if (step == 6U && !complete)
-            factory::ui::prepareStandardLvglPowerDown(true);
-    };
-
     const bool connectivity_was_initialized = application.esp32c5.isInitialized();
     const bool wifi_was_started = application.esp32c5.status().wifi_started;
-    const auto restore_connectivity = [&]() {
+    const bool display_was_initialized = application.board.isDisplayInitialized();
+    const bool touch_was_initialized = application.board.isTouchInitialized();
+    const auto display_config = application.board.displayConfig();
+    const auto touch_config = application.board.touchConfig();
+    const auto display_brightness = application.board.backlightBrightness();
+    const auto restore_connectivity = [&]()
+    {
         if (!connectivity_was_initialized || application.esp32c5.isInitialized())
             return ESP_OK;
 
+        // Board teardown can fail after XL9555 has turned off the shared
+        // C5/audio/LCD rail. Restore power before ESP-Hosted starts SDIO/RPC.
+        const esp_err_t power_result = application.board.initializePower();
+        if (power_result != ESP_OK)
+        {
+            application.esp32c5_result = power_result;
+            ESP_LOGE(kTag, "restore power before ESP32-C5 recovery failed: %s",
+                     esp_err_to_name(power_result));
+            return power_result;
+        }
         esp_err_t restore_result = application.esp32c5.initialize(
             application.esp32c5_config);
         if (restore_result == ESP_OK && wifi_was_started)
@@ -648,9 +660,8 @@ extern "C" esp_err_t settings_control_enter_deep_sleep(void)
         return restore_result;
     };
 
-    esp_err_t result = status_bar_stop_monitor();
-    if (result != ESP_OK)
-        return result;
+    factory::ui::prepareStandardLvglPowerDown(true);
+    esp_err_t result = ESP_OK;
 
     if (connectivity_was_initialized)
     {
@@ -659,59 +670,60 @@ extern "C" esp_err_t settings_control_enter_deep_sleep(void)
         if (result != ESP_OK)
         {
             (void)restore_connectivity();
-            status_bar_start_monitor(provideStatusBarCallback, &application);
+            factory::ui::resumeStandardLvglDisplay();
             return result;
         }
         application.esp32c5_result = ESP_ERR_INVALID_STATE;
     }
 
-    result = application.board.enterDeepSleep(
-        bsp::t_panel_p4_standard::DeepSleepConfig{}, progress, nullptr);
-    if (result != ESP_OK && application.board.isDisplayInitialized())
-    {
-        if (!application.board.isTouchInitialized())
-            (void)application.board.initializeTouch();
-        factory::ui::resumeStandardLvglDisplay();
-    }
+    result = application.board.enterDeepSleep();
     if (result != ESP_OK)
     {
-        (void)restore_connectivity();
-        status_bar_start_monitor(provideStatusBarCallback, &application);
+        // A failed deep-sleep attempt may already have removed the display,
+        // touch and PMIC. Recreate their saved bindings before resuming LVGL.
+        esp_err_t restore_result = application.board.initializePower();
+        const bool power_restored = restore_result == ESP_OK;
+        if (restore_result == ESP_OK && display_was_initialized)
+        {
+            restore_result = application.board.initializeDisplay(display_config);
+            if (restore_result == ESP_OK)
+                restore_result = application.board.setBacklightBrightness(display_brightness);
+        }
+        if (restore_result == ESP_OK && touch_was_initialized &&
+            !application.board.isTouchInitialized())
+            restore_result = application.board.initializeTouch(touch_config);
+        if (restore_result != ESP_OK)
+            ESP_LOGE(kTag, "restore display/power after deep-sleep failure failed: %s",
+                     esp_err_to_name(restore_result));
+        if (power_restored)
+        {
+            (void)restore_connectivity();
+        }
+        if (restore_result == ESP_OK && application.board.isDisplayInitialized())
+            factory::ui::resumeStandardLvglDisplay();
     }
     return result;
 }
 
 extern "C" esp_err_t settings_control_enter_light_sleep(void)
 {
-    // The status monitor reads AXP517 over the same I2C bus used by the
-    // Jadard touch controller. Stop it before the BSP removes the touch I2C
-    // device, otherwise an in-flight power read can make removal fail with
-    // ESP_ERR_INVALID_STATE.
-    esp_err_t result = status_bar_stop_monitor();
-    if (result != ESP_OK)
-        return result;
-
     factory::ui::prepareStandardLvglPowerDown(true);
-    result = application.board.enterLightSleep();
+    esp_err_t result = application.board.enterLightSleep();
     if (result != ESP_OK && !application.board.isTouchInitialized())
         (void)application.board.initializeTouch();
     if (application.board.isDisplayInitialized())
         factory::ui::resumeStandardLvglDisplay();
-    status_bar_start_monitor(provideStatusBarCallback, &application);
     return result;
 }
 
 extern "C" void app_main(void)
 {
     logHeapSnapshot("before board initialize");
+    // Initialize every BSP peripheral once, with BSP ordering and rollback.
+    // Camera streaming and application connectivity are started separately.
     ESP_ERROR_CHECK(application.board.initialize());
     logHeapSnapshot("after board initialize");
-    bsp::t_panel_p4_standard::DisplayConfig display_config{};
-    display_config.frame_buffer_count = 2;
-    ESP_ERROR_CHECK(application.board.initializeDisplay(display_config));
-    ESP_ERROR_CHECK(application.board.initializeTouch());
     ESP_ERROR_CHECK(application.board.setBacklightBrightness(50));
-    logHeapSnapshot("after display initialize");
 
     initializeDevices(application);
     logHeapSnapshot("after devices initialize");

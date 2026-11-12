@@ -19,16 +19,6 @@ set(EXAMPLE_WHOLE_ARCHIVE OFF)
 
 include("${EXAMPLE_CMAKE}")
 
-# The round board uses the standard BSP API and headers, but has its own BSP
-# component because its board wiring is packaged separately. Keep existing
-# standard examples source-compatible while linking them with the round BSP.
-if((T_PANEL_P4_HARDWARE_VERSION STREQUAL "round" OR
-    T_PANEL_P4_BSP_COMPONENT STREQUAL "t_panel_p4_round") AND
-   EXAMPLE_PRIV_REQUIRES)
-    list(TRANSFORM EXAMPLE_PRIV_REQUIRES
-        REPLACE "^t_panel_p4_standard$" "t_panel_p4_round")
-endif()
-
 if(NOT EXAMPLE_SRCS)
     message(FATAL_ERROR
         "Example '${T_PANEL_P4_EXAMPLE}' did not define EXAMPLE_SRCS")

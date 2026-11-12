@@ -1,7 +1,7 @@
 #include "record_audio.h"
 #include "service_context.hpp"
 
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -119,6 +119,13 @@ namespace
     {
         std::uint8_t buffer[kChunkBytes];
         std::size_t offset = 0U;
+        if (s_board == nullptr || s_board->setAudioOutputEnabled(true) != ESP_OK)
+        {
+            s_record_playing = false;
+            s_play_task = nullptr;
+            vTaskDelete(nullptr);
+            return;
+        }
         while (!s_play_stop && s_board != nullptr && s_record_cache != nullptr &&
                offset < s_record_bytes)
         {
@@ -132,6 +139,9 @@ namespace
             offset += written;
             update_waveform(buffer, written);
         }
+        if (!s_play_stop && offset == s_record_bytes)
+            (void)s_board->drainAudio();
+        (void)s_board->setSpeakerEnabled(false);
         s_record_playing = false;
         s_play_task = nullptr;
         vTaskDelete(nullptr);

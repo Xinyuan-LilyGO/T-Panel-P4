@@ -46,5 +46,5 @@ list(APPEND EXAMPLE_PRIV_REQUIRES
     lvgl_page_manager
     peripheral_drivers_lib
     esp32c5_connectivity
-    t_panel_p4_standard
+    t_panel_p4
 )

@@ -14,11 +14,11 @@
 #include <freertos/semphr.h>
 #include <lvgl.h>
 
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 #include <pdl/core/status.hpp>
-#include <pdl/drivers/touch/jadard/jadard.hpp>
 
 #include "lvgl_init.hpp"
+#include "ui.h"
 
 namespace factory::ui
 {
@@ -30,7 +30,8 @@ namespace factory::ui
         struct StandardLvglContext
         {
             bsp::t_panel_p4_standard::Board *board{};
-            pdl::touch::JadardTouch *touch{};
+            bsp::TouchController *touch{};
+            bsp::TouchData touch_report{};
             SemaphoreHandle_t refresh_semaphore{};
             SemaphoreHandle_t te_semaphore{};
             bool te_enabled{};
@@ -154,10 +155,11 @@ namespace factory::ui
                 return;
             }
 
-            pdl::touch::JadardTouchData report{};
+            auto &report = port->touch_report;
             const pdl::Status status =
                 touch->readTouchData(report, kTouchTimeoutMs);
-            if (pdl::isError(status))
+            // busy means no new report; keep the last successful input state.
+            if (pdl::isError(status) && status != pdl::Status::busy)
             {
                 static TickType_t last_error_log{};
                 const TickType_t now = xTaskGetTickCount();
@@ -167,6 +169,7 @@ namespace factory::ui
                              static_cast<int>(status));
                     last_error_log = now;
                 }
+                report = {};
                 input_data->state = LV_INDEV_STATE_RELEASED;
                 return;
             }
@@ -192,11 +195,15 @@ namespace factory::ui
 
     void prepareStandardLvglPowerDown(bool stop_display)
     {
+        // Match the external UI handler's lock before taking LVGL's own lock.
+        // This also drains status-provider reads before device teardown.
+        ui_lock();
         lv_lock();
         // The touch controller is destroyed immediately after this function
         // returns. Stop LVGL's input timer while holding the LVGL lock so no
         // readTouch callback can race with I2C device removal.
         pauseLvglInputState();
+        context.touch_report = {};
         context.touch = nullptr;
         if (stop_display)
         {
@@ -213,13 +220,18 @@ namespace factory::ui
                 lv_timer_pause(lv_display_get_refr_timer(display));
             }
             context.display_powered_down = true;
+            // Pause all UI timers, including page timers that access devices.
+            lv_timer_enable(false);
+            ESP_LOGI(kTag, "LVGL refresh and timers paused for sleep");
         }
         lv_unlock();
+        ui_unlock();
     }
 
     void resumeStandardLvglDisplay()
     {
         ESP_LOGI(kTag, "LVGL resume: enter");
+        ui_lock();
         lv_lock();
         ESP_LOGI(kTag, "LVGL resume: lock acquired");
         if (context.board != nullptr)
@@ -241,6 +253,7 @@ namespace factory::ui
             {
                 ESP_LOGE(kTag, "LVGL display buffers unavailable after wake");
                 lv_unlock();
+                ui_unlock();
                 return;
             }
 
@@ -277,12 +290,14 @@ namespace factory::ui
                 ESP_LOGE(kTag, "Register display refresh callback after wake failed: %s",
                          esp_err_to_name(callback_error));
                 lv_unlock();
+                ui_unlock();
                 return;
             }
             resetLvglInputState();
             ESP_LOGI(kTag, "LVGL resume: input state reset");
             context.display_powered_down = false;
             lv_timer_resume(lv_display_get_refr_timer(display));
+            lv_timer_enable(true);
             ESP_LOGI(kTag, "LVGL resume: display refresh timer resumed");
 
             // DPI resume deliberately starts from framebuffer zero.  LVGL
@@ -295,6 +310,7 @@ namespace factory::ui
             ESP_LOGI(kTag, "LVGL display binding restored after wake");
         }
         lv_unlock();
+        ui_unlock();
         ESP_LOGI(kTag, "LVGL resume: exit");
     }
 
@@ -312,7 +328,7 @@ namespace factory::ui
             kTag,
             "DPI double framebuffers are not available");
 
-        pdl::touch::JadardTouch *touch = board.touchController();
+        bsp::TouchController *touch = board.touchController();
         ESP_RETURN_ON_FALSE(
             touch != nullptr,
             ESP_ERR_INVALID_STATE,

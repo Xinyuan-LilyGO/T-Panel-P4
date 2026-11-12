@@ -1,7 +1,8 @@
 # USB MSC SD-card example
 
 This example exposes the board's SD card to a computer as a USB Mass Storage
-Class device. The BSP powers the card through XL9555 P0_1 and initializes the
+Class device on standard, round, and rect hardware. The BSP powers the card
+through the selected board's XL9555 or direct GPIO path and initializes the
 four-bit SDMMC interface without mounting FatFS locally. The BSP also owns the
 TinyUSB descriptors, MSC driver, raw block-device binding, and cleanup. The
 example only calls `Board::initializeUsbMsc()`.

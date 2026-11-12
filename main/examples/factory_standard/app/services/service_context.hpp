@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 #include <esp32c5_connectivity/esp32c5_connectivity.hpp>
 
 namespace factory::services

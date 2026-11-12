@@ -18,7 +18,7 @@
 
 #include <app/services/music_audio.h>
 #include <app/services/service_context.hpp>
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 
 #define MUSIC_DIRECTORY "/sdcard/music"
 #define MUSIC_SCREEN_WIDTH 720
@@ -47,11 +47,10 @@
 #define MUSIC_CONTROLS_Y 400
 #define MUSIC_VOLUME_Y 524
 #define MUSIC_VOLUME_HEIGHT 15
-#define MUSIC_ENERGY_Y 688
-#define MUSIC_ENERGY_HEIGHT 3
-#define MUSIC_ENERGY_TRACK_WIDTH (MUSIC_SCREEN_WIDTH - MUSIC_SIDE_MARGIN * 2)
-#define MUSIC_ENERGY_PULSE_COUNT 3
-#define MUSIC_ENERGY_CORE_SIZE 6
+#define MUSIC_CASSETTE_Y 574
+#define MUSIC_CASSETTE_HEIGHT 116
+#define MUSIC_CASSETTE_WIDTH (MUSIC_SCREEN_WIDTH - MUSIC_SIDE_MARGIN * 2)
+#define MUSIC_CASSETTE_HUB_SIZE 32
 #define MUSIC_LIST_X 270
 #define MUSIC_LIST_Y 54
 #define MUSIC_LIST_WIDTH (MUSIC_SCREEN_WIDTH - MUSIC_SIDE_MARGIN - MUSIC_LIST_X)
@@ -101,11 +100,15 @@ typedef struct
     bool play_symbol_is_pause;
     lv_obj_t *volume;
     lv_obj_t *volume_text;
-    lv_obj_t *energy_track;
-    lv_obj_t *energy_pulses[MUSIC_ENERGY_PULSE_COUNT];
-    lv_obj_t *energy_core;
-    float energy_level;
-    uint32_t energy_last_tick;
+    lv_obj_t *cassette;
+    lv_obj_t *cassette_status;
+    lv_obj_t *cassette_counter;
+    lv_obj_t *cassette_hubs[2];
+    float cassette_angle[2];
+    uint16_t cassette_radius[2];
+    uint32_t cassette_last_tick;
+    music_audio_state_t cassette_state;
+    bool cassette_state_valid;
     lv_obj_t *playlist;
     lv_obj_t *playlist_list;
     lv_obj_t *playlist_spacer;
@@ -243,128 +246,272 @@ static void music_spectrum_create(lv_obj_t *parent)
     }
 }
 
-static void music_energy_create(lv_obj_t *parent)
+static void music_cassette_line(lv_layer_t *layer, int32_t x1, int32_t y1,
+                                int32_t x2, int32_t y2, uint32_t color,
+                                int32_t width = 1, lv_opa_t opacity = LV_OPA_COVER)
 {
-    s_music_ui.energy_track = lv_obj_create(parent);
-    lv_obj_set_size(s_music_ui.energy_track,
-                    MUSIC_ENERGY_TRACK_WIDTH, MUSIC_ENERGY_HEIGHT);
-    lv_obj_set_pos(s_music_ui.energy_track, MUSIC_SIDE_MARGIN, MUSIC_ENERGY_Y);
-    lv_obj_set_style_bg_color(s_music_ui.energy_track, lv_color_hex(CYBER_GRID), 0);
-    lv_obj_set_style_bg_opa(s_music_ui.energy_track, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_music_ui.energy_track, 0, 0);
-    lv_obj_set_style_radius(s_music_ui.energy_track, 0, 0);
-    lv_obj_set_style_pad_all(s_music_ui.energy_track, 0, 0);
-    music_gesture_passthrough(s_music_ui.energy_track);
-
-    static const lv_coord_t pulse_widths[MUSIC_ENERGY_PULSE_COUNT] = {96, 240, 440};
-    static const lv_coord_t pulse_heights[MUSIC_ENERGY_PULSE_COUNT] = {4, 2, 1};
-    static const uint32_t pulse_colors[MUSIC_ENERGY_PULSE_COUNT] = {
-        CYBER_YELLOW_GREEN, CYBER_CYAN, CYBER_CYAN};
-    for (size_t index = 0U; index < MUSIC_ENERGY_PULSE_COUNT; ++index)
-    {
-        s_music_ui.energy_pulses[index] = lv_obj_create(parent);
-        lv_obj_set_size(s_music_ui.energy_pulses[index],
-                        pulse_widths[index], pulse_heights[index]);
-        lv_obj_set_pos(s_music_ui.energy_pulses[index],
-                       (MUSIC_SCREEN_WIDTH - pulse_widths[index]) / 2,
-                       MUSIC_ENERGY_Y - pulse_heights[index] / 2);
-        lv_obj_set_style_bg_color(s_music_ui.energy_pulses[index],
-                                  lv_color_hex(pulse_colors[index]), 0);
-        lv_obj_set_style_bg_opa(s_music_ui.energy_pulses[index], LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(s_music_ui.energy_pulses[index], 0, 0);
-        lv_obj_set_style_radius(s_music_ui.energy_pulses[index], 1, 0);
-        lv_obj_set_style_pad_all(s_music_ui.energy_pulses[index], 0, 0);
-        lv_obj_set_style_shadow_color(s_music_ui.energy_pulses[index],
-                                      lv_color_hex(pulse_colors[index]), 0);
-        lv_obj_set_style_shadow_width(s_music_ui.energy_pulses[index],
-                                      index == 0U ? 12 : 8, 0);
-        lv_obj_set_style_shadow_spread(s_music_ui.energy_pulses[index], 1, 0);
-        lv_obj_set_style_shadow_opa(s_music_ui.energy_pulses[index], LV_OPA_TRANSP, 0);
-        music_gesture_passthrough(s_music_ui.energy_pulses[index]);
-    }
-
-    s_music_ui.energy_core = lv_obj_create(parent);
-    lv_obj_set_size(s_music_ui.energy_core, MUSIC_ENERGY_CORE_SIZE,
-                    MUSIC_ENERGY_CORE_SIZE);
-    lv_obj_set_pos(s_music_ui.energy_core,
-                   (MUSIC_SCREEN_WIDTH - MUSIC_ENERGY_CORE_SIZE) / 2,
-                   MUSIC_ENERGY_Y - MUSIC_ENERGY_CORE_SIZE / 2);
-    lv_obj_set_style_bg_color(s_music_ui.energy_core,
-                              lv_color_hex(CYBER_YELLOW_GREEN), 0);
-    lv_obj_set_style_bg_opa(s_music_ui.energy_core, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_music_ui.energy_core, 0, 0);
-    lv_obj_set_style_radius(s_music_ui.energy_core, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_pad_all(s_music_ui.energy_core, 0, 0);
-    lv_obj_set_style_shadow_color(s_music_ui.energy_core,
-                                  lv_color_hex(CYBER_YELLOW_GREEN), 0);
-    lv_obj_set_style_shadow_width(s_music_ui.energy_core, 14, 0);
-    lv_obj_set_style_shadow_spread(s_music_ui.energy_core, 2, 0);
-    lv_obj_set_style_shadow_opa(s_music_ui.energy_core, LV_OPA_TRANSP, 0);
-    music_gesture_passthrough(s_music_ui.energy_core);
-
-    s_music_ui.energy_level = 0.0F;
-    s_music_ui.energy_last_tick = lv_tick_get();
+    lv_draw_line_dsc_t line;
+    lv_draw_line_dsc_init(&line);
+    line.p1.x = x1;
+    line.p1.y = y1;
+    line.p2.x = x2;
+    line.p2.y = y2;
+    line.color = lv_color_hex(color);
+    line.width = width;
+    line.opa = opacity;
+    lv_draw_line(layer, &line);
 }
 
-static void music_energy_update(bool active)
+static void music_cassette_ring(lv_layer_t *layer, int32_t x, int32_t y,
+                                uint16_t radius, int32_t width, uint32_t color,
+                                int32_t start = 0, int32_t end = 360)
 {
-    if (s_music_ui.energy_track == NULL || s_music_ui.energy_core == NULL ||
-        s_music_ui.energy_pulses[0] == NULL ||
-        s_music_ui.energy_pulses[1] == NULL ||
-        s_music_ui.energy_pulses[2] == NULL)
-        return;
+    lv_draw_arc_dsc_t arc;
+    lv_draw_arc_dsc_init(&arc);
+    arc.center.x = x;
+    arc.center.y = y;
+    arc.radius = radius;
+    arc.width = width;
+    arc.color = lv_color_hex(color);
+    arc.start_angle = start;
+    arc.end_angle = end;
+    lv_draw_arc(layer, &arc);
+}
 
-    const uint32_t now = lv_tick_get();
-    uint32_t elapsed = now - s_music_ui.energy_last_tick;
-    s_music_ui.energy_last_tick = now;
-    if (elapsed > 100U)
-        elapsed = 100U;
+static void music_cassette_disc(lv_layer_t *layer, int32_t x, int32_t y,
+                                int32_t radius, uint32_t color)
+{
+    lv_draw_rect_dsc_t disc;
+    lv_draw_rect_dsc_init(&disc);
+    disc.radius = LV_RADIUS_CIRCLE;
+    disc.bg_color = lv_color_hex(color);
+    const lv_area_t area = {x - radius, y - radius, x + radius, y + radius};
+    lv_draw_rect(layer, &disc, &area);
+}
 
-    const float target_level = active
-                                   ? (float)music_audio_level_percent() / 100.0F
-                                   : 0.0F;
-    const float response = active ? 0.36F : 0.14F;
-    s_music_ui.energy_level +=
-        (target_level - s_music_ui.energy_level) * response;
-    const float elapsed_scale = elapsed > 0U ? (float)elapsed / 33.0F : 1.0F;
-    const float pulse = active
-                            ? s_music_ui.energy_level
-                            : s_music_ui.energy_level * (1.0F - 0.08F * elapsed_scale);
-    static const lv_coord_t base_widths[MUSIC_ENERGY_PULSE_COUNT] = {96, 240, 440};
-    static const lv_coord_t spread_widths[MUSIC_ENERGY_PULSE_COUNT] = {88, 180, 180};
-    static const lv_opa_t base_opacity[MUSIC_ENERGY_PULSE_COUNT] = {180, 80, 35};
-    for (size_t index = 0U; index < MUSIC_ENERGY_PULSE_COUNT; ++index)
+static void music_cassette_pack(lv_layer_t *layer, int32_t cx, int32_t cy, size_t reel)
+{
+    const uint16_t radius = s_music_ui.cassette_radius[reel];
+    music_cassette_disc(layer, cx, cy, radius, 0x173536);
+    for (uint16_t ring = 19; ring <= radius; ring += 3)
+        music_cassette_ring(layer, cx, cy, ring, 1, 0x285050);
+    music_cassette_ring(layer, cx, cy, radius, 1, CYBER_MUTED);
+    music_cassette_disc(layer, cx, cy, 15, CYBER_PANEL);
+    music_cassette_ring(layer, cx, cy, 15, 1, CYBER_CYAN);
+}
+
+static void music_cassette_hub_draw_cb(lv_event_t *event)
+{
+    const size_t reel = (size_t)(uintptr_t)lv_event_get_user_data(event);
+    lv_layer_t *layer = lv_event_get_layer(event);
+    lv_area_t bounds;
+    lv_obj_get_coords(lv_event_get_target_obj(event), &bounds);
+    const int32_t cx = bounds.x1 + MUSIC_CASSETTE_HUB_SIZE / 2;
+    const int32_t cy = bounds.y1 + MUSIC_CASSETTE_HUB_SIZE / 2;
+    // Repaint the pack under the hub's square corners too. This opaque child
+    // can refresh on its own without clearing/redrawing the complete transport.
+    music_cassette_pack(layer, cx, cy, reel);
+    for (size_t spoke = 0U; spoke < 3U; ++spoke)
     {
-        const lv_coord_t width = base_widths[index] +
-                                 (lv_coord_t)(spread_widths[index] * pulse);
-        const lv_opa_t opacity = active
-                                     ? (lv_opa_t)(base_opacity[index] +
-                                                  (255U - base_opacity[index]) * pulse)
-                                     : (lv_opa_t)(base_opacity[index] * pulse);
-        const lv_coord_t height = index == 0U
-                                      ? (lv_coord_t)(MUSIC_ENERGY_HEIGHT + 1U + pulse * 3.0F)
-                                      : MUSIC_ENERGY_HEIGHT;
-        lv_obj_set_width(s_music_ui.energy_pulses[index], width);
-        lv_obj_set_height(s_music_ui.energy_pulses[index], height);
-        lv_obj_set_x(s_music_ui.energy_pulses[index],
-                     (MUSIC_SCREEN_WIDTH - width) / 2);
-        lv_obj_set_y(s_music_ui.energy_pulses[index],
-                     MUSIC_ENERGY_Y - height / 2);
-        lv_obj_set_style_bg_opa(s_music_ui.energy_pulses[index], opacity, 0);
-        lv_obj_set_style_shadow_opa(s_music_ui.energy_pulses[index],
-                                    (lv_opa_t)(opacity / 2U), 0);
+        const float angle = (s_music_ui.cassette_angle[reel] + spoke * 120.0F) *
+                            3.14159265F / 180.0F;
+        const float c = cosf(angle);
+        const float s = sinf(angle);
+        music_cassette_line(layer,
+                            cx + (int32_t)lroundf(7.0F * c), cy + (int32_t)lroundf(7.0F * s),
+                            cx + (int32_t)lroundf(12.0F * c), cy + (int32_t)lroundf(12.0F * s),
+                            CYBER_CYAN, 3);
+    }
+    const bool playing = s_music_ui.cassette_state_valid &&
+                         s_music_ui.cassette_state == MUSIC_AUDIO_STATE_PLAYING;
+    music_cassette_disc(layer, cx, cy, 3, playing ? CYBER_YELLOW_GREEN : CYBER_MUTED);
+}
+
+static void music_cassette_draw_cb(lv_event_t *event)
+{
+    lv_layer_t *layer = lv_event_get_layer(event);
+    lv_area_t bounds;
+    lv_obj_get_coords(lv_event_get_target_obj(event), &bounds);
+    const int32_t x = bounds.x1;
+    const int32_t y = bounds.y1;
+    const int32_t width = MUSIC_CASSETTE_WIDTH;
+    const bool playing = s_music_ui.cassette_state_valid &&
+                         s_music_ui.cassette_state == MUSIC_AUDIO_STATE_PLAYING;
+    const uint32_t accent = playing ? CYBER_YELLOW_GREEN : CYBER_MUTED;
+
+    // Open corner brackets keep the transport quieter than the main controls.
+    for (int side = 0; side < 2; ++side)
+    {
+        const int32_t edge = x + (side == 0 ? 0 : width - 1);
+        const int32_t inset = side == 0 ? 18 : -18;
+        music_cassette_line(layer, edge, y + 18, edge, y + 1, CYBER_GRID);
+        music_cassette_line(layer, edge, y + 1, edge + inset, y + 1, CYBER_CYAN);
+        music_cassette_line(layer, edge, y + 96, edge, y + 114, CYBER_GRID);
+        music_cassette_line(layer, edge, y + 114, edge + inset, y + 114, CYBER_CYAN);
     }
 
-    const lv_coord_t core_size = (lv_coord_t)(MUSIC_ENERGY_CORE_SIZE + pulse * 8.0F);
-    const lv_opa_t core_opa = active ? (lv_opa_t)(140.0F + pulse * 115.0F)
-                                     : (lv_opa_t)(pulse * 70.0F);
-    lv_obj_set_size(s_music_ui.energy_core, core_size, core_size);
-    lv_obj_set_pos(s_music_ui.energy_core,
-                   (MUSIC_SCREEN_WIDTH - core_size) / 2,
-                   MUSIC_ENERGY_Y - core_size / 2);
-    lv_obj_set_style_bg_opa(s_music_ui.energy_core, core_opa, 0);
-    lv_obj_set_style_shadow_opa(s_music_ui.energy_core,
-                                (lv_opa_t)(core_opa / 2U), 0);
+    const int32_t centers[2] = {x + 132, x + width - 132};
+    const int32_t cy = y + 49;
+    const int32_t left_r = s_music_ui.cassette_radius[0];
+    const int32_t right_r = s_music_ui.cassette_radius[1];
+    for (size_t reel = 0U; reel < 2U; ++reel)
+        music_cassette_disc(layer, centers[reel], cy, 35, CYBER_BG);
+    // The tape runs over two lower guides and the central playback head.
+    music_cassette_line(layer, centers[0], cy - left_r, x + 216, y + 16, CYBER_GRID);
+    music_cassette_line(layer, x + 216, y + 16, x + width - 216, y + 16, CYBER_GRID);
+    music_cassette_line(layer, x + width - 216, y + 16, centers[1], cy - right_r, CYBER_GRID);
+    for (size_t reel = 0U; reel < 2U; ++reel)
+    {
+        // Join the pack tangentially so a changing radius never detaches the tape.
+        const float radius = (float)s_music_ui.cassette_radius[reel];
+        const float distance_sq = 65.0F * 65.0F + 39.0F * 39.0F;
+        const float tangent = radius * sqrtf(distance_sq - radius * radius) / distance_sq;
+        const float tx = radius * radius * 65.0F / distance_sq - tangent * 39.0F;
+        const float ty = radius * radius * 39.0F / distance_sq + tangent * 65.0F;
+        music_cassette_line(layer, centers[reel] + (int32_t)(reel == 0U ? tx : -tx),
+                            cy + (int32_t)ty, x + (reel == 0U ? 197 : width - 197),
+                            y + 88, CYBER_MUTED);
+    }
+    music_cassette_line(layer, x + 197, y + 88, x + width - 197, y + 88, CYBER_MUTED);
+    music_cassette_disc(layer, x + 197, y + 85, 5, CYBER_PANEL);
+    music_cassette_ring(layer, x + 197, y + 85, 5, 1, CYBER_CYAN);
+    music_cassette_disc(layer, x + width - 197, y + 85, 5, CYBER_PANEL);
+    music_cassette_ring(layer, x + width - 197, y + 85, 5, 1, CYBER_CYAN);
+    music_cassette_line(layer, x + width / 2 - 20, y + 85,
+                        x + width / 2 + 20, y + 85, accent, 3);
+    music_cassette_line(layer, x + width / 2 - 20, y + 92,
+                        x + width / 2 + 20, y + 92, CYBER_GRID);
+
+    for (size_t reel = 0U; reel < 2U; ++reel)
+    {
+        const int32_t cx = centers[reel];
+        music_cassette_ring(layer, cx, cy, 35, 1, CYBER_GRID);
+        music_cassette_ring(layer, cx, cy, 35, 1, CYBER_CYAN, 208, 292);
+        music_cassette_ring(layer, cx, cy, 35, 1, accent, 28, 78);
+        music_cassette_pack(layer, cx, cy, reel);
+        // Small fixed registration marks reinforce the mechanical silhouette.
+        music_cassette_line(layer, cx - 17, y + 100, cx + 17, y + 100, CYBER_GRID);
+        music_cassette_line(layer, cx, y + 97, cx, y + 103, CYBER_MUTED);
+    }
+}
+
+static void music_cassette_create(lv_obj_t *parent)
+{
+    s_music_ui.cassette = lv_obj_create(parent);
+    lv_obj_set_pos(s_music_ui.cassette, MUSIC_SIDE_MARGIN, MUSIC_CASSETTE_Y);
+    lv_obj_set_size(s_music_ui.cassette, MUSIC_CASSETTE_WIDTH, MUSIC_CASSETTE_HEIGHT);
+    lv_obj_set_style_bg_opa(s_music_ui.cassette, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_music_ui.cassette, 0, 0);
+    lv_obj_set_style_pad_all(s_music_ui.cassette, 0, 0);
+    lv_obj_set_style_radius(s_music_ui.cassette, 0, 0);
+    music_gesture_passthrough(s_music_ui.cassette);
+    lv_obj_add_event_cb(s_music_ui.cassette, music_cassette_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
+
+    for (size_t reel = 0U; reel < 2U; ++reel)
+    {
+        lv_obj_t *hub = lv_obj_create(s_music_ui.cassette);
+        lv_obj_remove_style_all(hub);
+        lv_obj_set_size(hub, MUSIC_CASSETTE_HUB_SIZE, MUSIC_CASSETTE_HUB_SIZE);
+        const int32_t cx = reel == 0U ? 132 : MUSIC_CASSETTE_WIDTH - 132;
+        lv_obj_set_pos(hub, cx - MUSIC_CASSETTE_HUB_SIZE / 2,
+                       49 - MUSIC_CASSETTE_HUB_SIZE / 2);
+        lv_obj_set_style_bg_color(hub, lv_color_hex(CYBER_BG), 0);
+        lv_obj_set_style_bg_opa(hub, LV_OPA_COVER, 0);
+        music_gesture_passthrough(hub);
+        lv_obj_add_event_cb(hub, music_cassette_hub_draw_cb, LV_EVENT_DRAW_MAIN,
+                            (void *)(uintptr_t)reel);
+        s_music_ui.cassette_hubs[reel] = hub;
+    }
+
+    s_music_ui.cassette_status = page_ui_label(
+        s_music_ui.cassette, "STANDBY", &lv_font_ShareTechMono1_16, CYBER_MUTED);
+    lv_obj_set_size(s_music_ui.cassette_status, 180, 20);
+    lv_obj_set_pos(s_music_ui.cassette_status, (MUSIC_CASSETTE_WIDTH - 180) / 2, 36);
+    lv_obj_set_style_text_align(s_music_ui.cassette_status, LV_TEXT_ALIGN_CENTER, 0);
+    music_gesture_passthrough(s_music_ui.cassette_status);
+    s_music_ui.cassette_counter = page_ui_label(
+        s_music_ui.cassette, "-- / --", &lv_font_ShareTechMono1_16, CYBER_MUTED);
+    lv_obj_set_size(s_music_ui.cassette_counter, 180, 20);
+    lv_obj_set_pos(s_music_ui.cassette_counter, (MUSIC_CASSETTE_WIDTH - 180) / 2, 59);
+    lv_obj_set_style_text_align(s_music_ui.cassette_counter, LV_TEXT_ALIGN_CENTER, 0);
+    music_gesture_passthrough(s_music_ui.cassette_counter);
+    s_music_ui.cassette_angle[0] = 0.0F;
+    s_music_ui.cassette_angle[1] = 0.0F;
+    s_music_ui.cassette_radius[0] = 30U;
+    s_music_ui.cassette_radius[1] = 17U;
+    s_music_ui.cassette_last_tick = lv_tick_get();
+    s_music_ui.cassette_state_valid = false;
+}
+
+static void music_cassette_update(music_audio_state_t state, bool active)
+{
+    if (s_music_ui.cassette == NULL)
+        return;
+    const uint32_t now = lv_tick_get();
+    const uint32_t elapsed = now - s_music_ui.cassette_last_tick;
+    s_music_ui.cassette_last_tick = now;
+    const music_audio_state_t display_state =
+        state == MUSIC_AUDIO_STATE_PLAYING && !active ? MUSIC_AUDIO_STATE_PAUSED : state;
+    bool redraw = false;
+    if (!s_music_ui.cassette_state_valid || s_music_ui.cassette_state != display_state)
+    {
+        const char *status = "STANDBY";
+        switch (display_state)
+        {
+        case MUSIC_AUDIO_STATE_STARTING: status = "LOADING"; break;
+        case MUSIC_AUDIO_STATE_PLAYING: status = "PLAYING"; break;
+        case MUSIC_AUDIO_STATE_PAUSED: status = "PAUSED"; break;
+        case MUSIC_AUDIO_STATE_STOPPED: status = "STOPPED"; break;
+        case MUSIC_AUDIO_STATE_FINISHED: status = "FINISHED"; break;
+        case MUSIC_AUDIO_STATE_ERROR: status = "ERROR"; break;
+        default: break;
+        }
+        lv_label_set_text(s_music_ui.cassette_status, status);
+        lv_obj_set_style_text_color(s_music_ui.cassette_status,
+            lv_color_hex(display_state == MUSIC_AUDIO_STATE_ERROR ? CYBER_MAGENTA :
+                         active ? CYBER_YELLOW_GREEN : CYBER_MUTED), 0);
+        s_music_ui.cassette_state = display_state;
+        s_music_ui.cassette_state_valid = true;
+        redraw = true;
+    }
+
+    size_t index;
+    size_t count;
+    portENTER_CRITICAL(&s_music_playlist_lock);
+    index = s_music_ui.current_index;
+    count = s_music_ui.track_count;
+    portEXIT_CRITICAL(&s_music_playlist_lock);
+    char counter[24] = "-- / --";
+    if (count > 0U && index < count)
+        snprintf(counter, sizeof(counter), "%02u / %02u",
+                 (unsigned)(index + 1U), (unsigned)count);
+    if (strcmp(lv_label_get_text(s_music_ui.cassette_counter), counter) != 0)
+        lv_label_set_text(s_music_ui.cassette_counter, counter);
+
+    const uint32_t duration = music_audio_duration_ms();
+    const float progress = duration > 0U
+        ? fminf(1.0F, (float)music_audio_position_ms() / (float)duration) : 0.0F;
+    for (size_t reel = 0U; reel < 2U; ++reel)
+    {
+        // Tape area transfers between reels; unknown duration keeps a full supply reel.
+        const float fill = reel == 0U ? 1.0F - progress : progress;
+        const uint16_t radius = (uint16_t)sqrtf(17.0F * 17.0F + fill * (900.0F - 289.0F));
+        if (s_music_ui.cassette_radius[reel] != radius)
+        {
+            s_music_ui.cassette_radius[reel] = radius;
+            redraw = true;
+        }
+        if (active)
+        {
+            // Match the two hubs' phase and speed. Tape quantity is shown by pack size.
+            const float step_ms = (float)(elapsed > 100U ? 100U : elapsed);
+            s_music_ui.cassette_angle[reel] = fmodf(
+                s_music_ui.cassette_angle[reel] + step_ms * 0.032F, 360.0F);
+            lv_obj_invalidate(s_music_ui.cassette_hubs[reel]);
+        }
+    }
+    if (redraw)
+        lv_obj_invalidate(s_music_ui.cassette);
 }
 
 static bool music_buffers_allocate(void)
@@ -1102,7 +1249,7 @@ static void music_playback_state_timer(lv_timer_t *timer)
     }
     (void)timer;
     const bool active = state == MUSIC_AUDIO_STATE_PLAYING && !music_audio_is_paused();
-    music_energy_update(active);
+    music_cassette_update(state, active);
     int16_t samples[MUSIC_SPECTRUM_SAMPLES]{};
     music_audio_get_waveform(samples, MUSIC_SPECTRUM_SAMPLES);
     music_lyrics_update(music_audio_position_ms(), music_audio_duration_ms());
@@ -1221,21 +1368,36 @@ static void music_volume_changed_cb(lv_event_t *event)
     }
 }
 
+static void music_playlist_set_visible(bool visible)
+{
+    if (s_music_ui.playlist == NULL)
+        return;
+    if (visible)
+        lv_obj_remove_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
+    // The right-side list overlaps the transport: hide the complete mechanism.
+    if (s_music_ui.cassette != NULL)
+    {
+        if (visible)
+            lv_obj_add_flag(s_music_ui.cassette, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_remove_flag(s_music_ui.cassette, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void music_playlist_toggle_cb(lv_event_t *event)
 {
     (void)event;
     if (s_music_ui.playlist == NULL)
         return;
-    if (lv_obj_has_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN))
-        lv_obj_clear_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
-    else
-        lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
+    music_playlist_set_visible(lv_obj_has_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN));
 }
 
 static void music_playlist_close_cb(lv_event_t *event)
 {
     (void)event;
-    lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
+    music_playlist_set_visible(false);
 }
 
 static void music_playlist_item_cb(lv_event_t *event)
@@ -1246,7 +1408,7 @@ static void music_playlist_item_cb(lv_event_t *event)
     const size_t index = first + slot;
     if (index >= s_music_ui.track_count)
         return;
-    lv_obj_add_flag(s_music_ui.playlist, LV_OBJ_FLAG_HIDDEN);
+    music_playlist_set_visible(false);
     music_select_track(index, true);
 }
 
@@ -1538,7 +1700,7 @@ static void music_page_create(Page *page)
     lv_obj_set_pos(s_music_ui.album, MUSIC_COVER_X,
                    MUSIC_COVER_Y + MUSIC_COVER_SIZE + 16);
     music_spectrum_create(s_music_ui.root);
-    music_energy_create(s_music_ui.root);
+    music_cassette_create(s_music_ui.root);
     s_music_ui.audio_params_primary = page_ui_label(
         s_music_ui.root, "--  --.- KHZ", &lv_font_ShareTechMono1_16, CYBER_CYAN);
     lv_obj_set_width(s_music_ui.audio_params_primary, MUSIC_SPECTRUM_WIDTH);

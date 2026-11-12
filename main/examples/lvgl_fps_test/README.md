@@ -8,7 +8,7 @@ their respective display and touch controllers.
 The benchmark cycles through the official scenes and shows the current FPS,
 render time, CPU usage, and final benchmark summary on the display. The same
 per-scene results and all-scenes average are written to the serial monitor.
-The Jadard touch controller is registered as an LVGL pointer input device, so
+The BSP's unified touch controller is registered as an LVGL pointer input device, so
 interactive benchmark widgets can be operated from the panel. Avoid touching
 the display while collecting comparable benchmark results because input
 handling and UI interaction can change the measured workload.
@@ -43,11 +43,12 @@ default 100 Hz tick. The 64 KiB simple-layer buffer reduces the number of
 rendering chunks used by translucent layers. Keep these settings unchanged
 between comparison runs.
 
-The ESP32-P4 PPA backend accelerates supported opaque fills and RGB images.
+When enabled in the example configuration, the ESP32-P4 PPA backend accelerates
+supported opaque fills and RGB images.
 LVGL uses its FreeRTOS OS backend with two software draw units so both CPU
 cores can render larger invalidated areas in parallel. Compile-time assertions
-prevent the benchmark from building if these acceleration settings are not
-active. LVGL draw buffers use the required 64-byte alignment matching the P4
+verify the LVGL version, FreeRTOS backend, draw unit count, and style/font
+settings. LVGL draw buffers use the required 64-byte alignment matching the P4
 L2 cache-line size.
 
 The object style cache is enabled to reduce repeated style-property lookup in

@@ -1,6 +1,6 @@
 #include "music_audio.h"
 #include "service_context.hpp"
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 #include <esp_err.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>

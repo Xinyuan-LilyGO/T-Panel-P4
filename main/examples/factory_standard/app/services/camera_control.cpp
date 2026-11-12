@@ -1,7 +1,7 @@
 #include "camera_control.h"
 #include "service_context.hpp"
 
-#include <bsp/t_panel_p4_standard.hpp>
+#include <bsp/board.hpp>
 #include <esp_err.h>
 #include <esp_log.h>
 #include <driver/jpeg_encode.h>
@@ -30,9 +30,9 @@ extern "C" bool camera_control_enter(void)
         return false;
     }
 
-    s_last_error = s_board->isCameraInitialized()
-                       ? s_board->startCameraStreaming()
-                       : s_board->initializeCamera();
+    s_last_error = s_board->initializeCamera();
+    if (s_last_error == ESP_OK)
+        s_last_error = s_board->startCameraStreaming();
     if (s_last_error != ESP_OK)
         ESP_LOGE(kTag, "camera page start failed: %s", esp_err_to_name(s_last_error));
     return s_last_error == ESP_OK;

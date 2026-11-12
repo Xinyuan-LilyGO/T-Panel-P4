@@ -15,27 +15,7 @@
 
 #include <pdl/core/status.hpp>
 
-#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
-#include <bsp/t_panel_p4_standard.hpp>
-#include <pdl/drivers/touch/jadard/jadard.hpp>
-#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_standard
-#define T_PANEL_P4_FPS_TOUCH JadardTouch
-#define T_PANEL_P4_FPS_TOUCH_DATA JadardTouchData
-#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
-#include <bsp/t_panel_p4_round.hpp>
-#include <pdl/drivers/touch/gt911/gt911.hpp>
-#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
-#define T_PANEL_P4_FPS_TOUCH Gt911Touch
-#define T_PANEL_P4_FPS_TOUCH_DATA Gt911TouchData
-#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
-#include <bsp/t_panel_p4_rect.hpp>
-#include <pdl/drivers/touch/ili9882/ili9882.hpp>
-#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_rect
-#define T_PANEL_P4_FPS_TOUCH Ili9882Touch
-#define T_PANEL_P4_FPS_TOUCH_DATA Ili9882TouchData
-#else
-#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
-#endif
+#include <bsp/board.hpp>
 
 namespace
 {
@@ -46,9 +26,9 @@ static_assert(
 
 constexpr char kTag[] = "lvgl_lcd_touch";
 constexpr int kDisplayWidth =
-    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board::displayWidth;
+    bsp::Board::displayWidth;
 constexpr int kDisplayHeight =
-    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board::displayHeight;
+    bsp::Board::displayHeight;
 constexpr std::size_t kDrawBufferLines = 48;
 constexpr std::uint32_t kTouchTimeoutMs = 20;
 constexpr std::uint32_t kMinimumLoopDelayMs = 5;
@@ -56,8 +36,9 @@ constexpr std::uint32_t kMaximumLoopDelayMs = 20;
 
 struct Application
 {
-    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
-    pdl::touch::T_PANEL_P4_FPS_TOUCH *touch{};
+    bsp::Board board;
+    bsp::TouchController *touch{};
+    bsp::TouchData touch_report{};
     lv_obj_t *coordinate_label{};
     std::uint16_t last_x{};
     std::uint16_t last_y{};
@@ -112,11 +93,12 @@ void readTouch(lv_indev_t *input_device, lv_indev_data_t *input_data)
         return;
     }
 
-    pdl::touch::JadardTouchData report{};
+    auto &report = app->touch_report;
     const pdl::Status status =
         app->touch->readTouchData(report, kTouchTimeoutMs);
-    if (pdl::isError(status) || report.finger_count == 0U)
+    if ((pdl::isError(status) && status != pdl::Status::busy) || report.finger_count == 0U)
     {
+        report = {};
         input_data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
@@ -238,8 +220,9 @@ esp_err_t initializeLvgl(Application &app)
 
 extern "C" void app_main(void)
 {
-    ESP_ERROR_CHECK(application.board.initialize());
-    ESP_ERROR_CHECK(application.board.initializeDisplay());
+    bsp::DisplayConfig display_config{};
+    display_config.in_color_format = LCD_COLOR_FMT_RGB565;
+    ESP_ERROR_CHECK(application.board.initializeDisplay(display_config));
     ESP_ERROR_CHECK(application.board.initializeTouch());
 
     application.touch = application.board.touchController();

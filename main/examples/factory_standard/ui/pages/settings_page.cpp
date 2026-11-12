@@ -1158,18 +1158,6 @@ static void settings_system_cb(lv_event_t *event)
         break;
     }
     settings_popup_show(title, body, action, true);
-    if (action == SETTINGS_ACTION_SHIP)
-    {
-        lv_obj_set_height(s_settings_popup_message, 32);
-        lv_obj_set_style_text_font(s_settings_popup_message, &lv_font_ShareTechMono1_20, 0);
-        settings_ship_progress_reset();
-    }
-    else if (action == SETTINGS_ACTION_DEEP_SLEEP || action == SETTINGS_ACTION_LIGHT_SLEEP)
-    {
-        lv_obj_set_height(s_settings_popup_message, 32);
-        lv_obj_set_style_text_font(s_settings_popup_message, &lv_font_ShareTechMono1_20, 0);
-        settings_sleep_progress_reset(action == SETTINGS_ACTION_DEEP_SLEEP ? 0U : 1U);
-    }
 }
 
 static lv_obj_t *settings_category(lv_obj_t *root, const char *name,

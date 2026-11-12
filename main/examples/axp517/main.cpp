@@ -1,264 +1,216 @@
 #include <cstdint>
 #include <cstdio>
 
+#include <esp_err.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <pdl/core/status.hpp>
+#include <bsp/board.hpp>
+
 #include <pdl/drivers/charge/axp517/axp517.hpp>
-#include <pdl/ports/esp_idf/i2c_bus.hpp>
-#include <pdl/ports/esp_idf/i2c_device.hpp>
 
 namespace
 {
-    constexpr gpio_num_t kI2cSda = GPIO_NUM_3;
-    constexpr gpio_num_t kI2cScl = GPIO_NUM_2;
-    constexpr std::uint32_t kI2cFrequencyHz = 400000;
+    using PowerConfig = bsp::T_PANEL_P4_BSP_NAMESPACE::PowerConfig;
 
-    class TestResults
+    // Edit these settings for the connected battery and power source. The BSP
+    // applies the same configuration on standard, round, and rect hardware.
+    PowerConfig examplePowerConfig()
     {
-    public:
-        bool check(const char *name, pdl::Status status)
-        {
-            if (pdl::isOk(status))
-            {
-                ++passed_;
-                std::printf("[PASS] %s\n", name);
-                return true;
-            }
-
-            ++failed_;
-            std::printf("[FAIL] %s: %s\n", name, pdl::statusName(status));
-            return false;
-        }
-
-        bool checkValue(const char *name, bool valid)
-        {
-            if (valid)
-            {
-                ++passed_;
-                std::printf("[PASS] %s\n", name);
-                return true;
-            }
-
-            ++failed_;
-            std::printf("[FAIL] %s\n", name);
-            return false;
-        }
-
-        void skip(const char *name, const char *reason)
-        {
-            ++skipped_;
-            std::printf("[SKIP] %s: %s\n", name, reason);
-        }
-
-        void printSummary() const
-        {
-            std::printf(
-                "\nAXP517 test result: %s (%u passed, %u failed, %u skipped)\n",
-                failed_ == 0U ? "PASS" : "FAIL",
-                passed_,
-                failed_,
-                skipped_);
-        }
-
-    private:
-        unsigned int passed_{};
-        unsigned int failed_{};
-        unsigned int skipped_{};
-    };
-
-    const char *yesNo(bool value)
-    {
-        return value ? "yes" : "no";
+        PowerConfig config{};
+        config.input_current_limit_ma = 1500;
+        config.input_voltage_limit_mv = 4600;
+        config.minimum_system_voltage_mv = 3500;
+        config.charge_voltage_mv = 4200;
+        config.charge_current_ma = 512;
+        config.precharge_current_ma = 128;
+        config.trickle_current_ma = 64;
+        config.termination_current_ma = 128;
+        config.enable_charge_termination = true;
+        config.enable_charger = true;
+        config.enable_adc = true;
+        config.enable_fuel_gauge = true;
+        config.enable_battery_detection = true;
+        config.enable_bc12_detection = true;
+        config.enable_type_c_detection = true;
+        config.enable_charge_led = true;
+        config.charge_led_output_type = pdl::charge::Axp517ChargeLedOutputType::open_drain;
+        config.charge_led_mode = pdl::charge::Axp517ChargeLedMode::type_a;
+        config.charge_led_cfg_state = pdl::charge::Axp517ChargeLedCfgState::high_impedance;
+        config.enable_interrupt = false;
+        return config;
     }
 
-    void testBatteryMeasurements(pdl::charge::Axp517 &axp517, const pdl::charge::Axp517PowerStatus &power, TestResults &results)
+    esp_err_t printConfiguration(bsp::Board &board, const PowerConfig &config)
     {
-        if (!power.battery_present)
-        {
-            results.skip("battery measurements", "battery is not present");
-            return;
-        }
+        // These are the requested values; the driver quantizes currents and
+        // voltages to register steps. The example values use exact steps.
+        std::printf("AXP517 configured: input=%u mA / %u mV, minimum-system=%u mV\n",
+                    config.input_current_limit_ma, config.input_voltage_limit_mv,
+                    config.minimum_system_voltage_mv);
+        std::printf("       charge=%u mV / %u mA, precharge=%u mA, trickle=%u mA, termination=%u mA\n",
+                    config.charge_voltage_mv, config.charge_current_ma,
+                    config.precharge_current_ma, config.trickle_current_ma,
+                    config.termination_current_ma);
 
-        std::uint8_t battery_percent{};
-        if (results.check(
-                "read battery percentage",
-                axp517.readBatteryPercentage(battery_percent)))
+        pdl::charge::Axp517ChargeLedConfig led{};
+        const esp_err_t error = board.readChargeLedConfig(led);
+        if (error != ESP_OK)
         {
-            std::printf("       Battery: %u %%\n", battery_percent);
+            std::printf("AXP517 CHGLED readback failed: %s\n", esp_err_to_name(error));
+            return error;
         }
+        std::printf("       CHGLED readback: enabled=%s, output=%s, mode=%u, cfg-state=%u, REG30=0x%02X\n",
+                    led.enabled ? "yes" : "no",
+                    led.output_type == pdl::charge::Axp517ChargeLedOutputType::open_drain
+                        ? "open-drain" : "push-pull",
+                    static_cast<unsigned>(led.mode), static_cast<unsigned>(led.cfg_state),
+                    static_cast<unsigned>(led.raw_config));
+        std::printf("       BSP interrupts=%s\n", board.isPowerInterruptEnabled() ? "enabled" : "disabled");
+        return ESP_OK;
+    }
 
-        std::uint8_t state_of_health{};
-        if (results.check(
-                "read battery state of health",
-                axp517.readBatteryStateOfHealth(state_of_health)))
+    const char *chargeState(pdl::charge::Axp517ChargeState state)
+    {
+        switch (state)
         {
-            std::printf("       State of health: %u %%\n", state_of_health);
-        }
-
-        std::uint16_t battery_mv{};
-        if (results.check(
-                "read battery voltage",
-                axp517.readBatteryVoltageMv(battery_mv)))
-        {
-            std::printf("       Battery voltage: %u mV\n", battery_mv);
-        }
-
-        std::int16_t battery_ma{};
-        if (results.check(
-                "read battery current",
-                axp517.readBatteryCurrentMa(battery_ma)))
-        {
-            std::printf("       Battery current: %d mA\n", battery_ma);
-        }
-
-        std::uint16_t ts_mv{};
-        if (results.check("read TS voltage", axp517.readTsVoltageMv(ts_mv)))
-        {
-            std::printf("       TS voltage: %u mV\n", ts_mv);
+        case pdl::charge::Axp517ChargeState::trickle:
+            return "trickle";
+        case pdl::charge::Axp517ChargeState::precharge:
+            return "precharge";
+        case pdl::charge::Axp517ChargeState::constant_current:
+            return "constant-current";
+        case pdl::charge::Axp517ChargeState::constant_voltage:
+            return "constant-voltage";
+        case pdl::charge::Axp517ChargeState::complete:
+            return "complete";
+        case pdl::charge::Axp517ChargeState::not_charging:
+            return "not-charging";
+        default:
+            return "unknown";
         }
     }
 
-    void testVbusMeasurements(pdl::charge::Axp517 &axp517, const pdl::charge::Axp517PowerStatus &power, TestResults &results)
+    const char *currentDirection(pdl::charge::Axp517BatteryCurrentDirection direction)
     {
-        if (!power.vbus_present)
+        switch (direction)
         {
-            results.skip("VBUS measurements", "VBUS is not present");
-            return;
-        }
-
-        std::uint16_t vbus_mv{};
-        if (results.check("read VBUS voltage", axp517.readVbusVoltageMv(vbus_mv)))
-        {
-            std::printf("       VBUS voltage: %u mV\n", vbus_mv);
-        }
-
-        std::uint16_t input_ma{};
-        if (results.check("read input current", axp517.readInputCurrentMa(input_ma)))
-        {
-            std::printf("       Input current: %u mA\n", input_ma);
+        case pdl::charge::Axp517BatteryCurrentDirection::charging:
+            return "charging";
+        case pdl::charge::Axp517BatteryCurrentDirection::discharging:
+            return "discharging";
+        case pdl::charge::Axp517BatteryCurrentDirection::standby:
+            return "standby";
+        default:
+            return "unknown";
         }
     }
 
-    void runAxp517Test()
+    void printPower(pdl::charge::Axp517 &device)
     {
-        TestResults results;
-        pdl::esp_idf::I2cBus i2c_bus;
-
-        std::printf("\nAXP517 hardware test\n");
-        std::printf(
-            "I2C: SDA=GPIO%d, SCL=GPIO%d, frequency=%lu Hz, address=0x%02X\n\n",
-            static_cast<int>(kI2cSda),
-            static_cast<int>(kI2cScl),
-            static_cast<unsigned long>(kI2cFrequencyHz),
-            pdl::charge::Axp517::defaultI2cAddress);
-
-        if (!results.check("initialize I2C bus", i2c_bus.initialize(kI2cSda, kI2cScl)))
-        {
-            results.printSummary();
-            return;
-        }
-
-        pdl::esp_idf::I2cDevice transport(
-            i2c_bus,
-            pdl::charge::Axp517::defaultI2cAddress,
-            kI2cFrequencyHz);
-        pdl::charge::Axp517 axp517(transport);
-
-        if (!results.check("initialize AXP517", axp517.initialize()))
-        {
-            results.check("deinitialize I2C bus", i2c_bus.deinitialize());
-            results.printSummary();
-            return;
-        }
-
-        std::uint16_t device_id{};
-        if (results.check("read AXP517 device ID", axp517.readId(device_id)))
-        {
-            std::printf("       Device ID: 0x%04X\n", device_id);
-            results.checkValue(
-                "validate AXP517 device ID",
-                device_id == 0x1F3AU || device_id == 0xE0C5U);
-        }
-
-        results.check("enable ADC channels", axp517.setAdcChannels(pdl::charge::Axp517::adcAll));
-        results.check("enable battery detection", axp517.setBatteryDetectionEnabled(true));
-        results.check("enable fuel gauge", axp517.setFuelGaugeEnabled(true));
-        vTaskDelay(pdMS_TO_TICKS(100));
-
         pdl::charge::Axp517PowerStatus power{};
-        const bool power_valid = results.check("read power status", axp517.readPowerStatus(power));
-        if (power_valid)
-        {
-            std::printf(
-                "       VBUS=%s, battery=%s, system=%s, BATFET=%s\n",
-                yesNo(power.vbus_present),
-                yesNo(power.battery_present),
-                yesNo(power.system_on),
-                yesNo(power.batfet_on));
-            std::printf(
-                "       voltage_limited=%s, current_limited=%s, thermal_regulation=%s\n",
-                yesNo(power.input_voltage_limited),
-                yesNo(power.input_current_limited),
-                yesNo(power.thermal_regulation));
-        }
+        pdl::charge::Axp517ModuleEnableStatus modules{};
+        std::uint8_t battery_percent{};
+        std::uint16_t battery_mv{};
+        std::int16_t battery_ma{};
+        std::uint16_t vbus_mv{};
+        bool charger_enabled{};
 
-        pdl::charge::Axp517FaultStatus fault{};
-        if (results.check("read fault status", axp517.readFaultStatus(fault)))
-        {
-            std::printf(
-                "       Fault registers: 0x%02X 0x%02X, system_OV=%s, battery_UV=%s\n",
-                fault.raw_fault0,
-                fault.raw_fault1,
-                yesNo(fault.system_over_voltage),
-                yesNo(fault.battery_under_voltage));
-        }
+        const auto power_error = device.readPowerStatus(power);
+        const auto module_error = device.readModuleEnableStatus(modules);
+        const auto charger_error = device.readChargerEnabled(charger_enabled);
+        const auto percent_error = device.readBatteryPercentage(battery_percent);
+        const auto voltage_error = device.readBatteryVoltageMv(battery_mv);
+        const auto current_error = device.readBatteryCurrentMa(battery_ma);
+        const auto vbus_error = device.readVbusVoltageMv(vbus_mv);
 
-        pdl::charge::Axp517UsbChargerType charger_type{};
-        if (results.check("read USB charger type", axp517.readUsbChargerType(charger_type)))
+        std::printf("\n[AXP517] ");
+        if (power_error == pdl::Status::ok)
         {
-            std::printf("       USB charger type code: %u\n", static_cast<unsigned int>(charger_type));
-        }
-
-        std::uint16_t system_mv{};
-        if (results.check("read system voltage", axp517.readSystemVoltageMv(system_mv)))
-        {
-            std::printf("       System voltage: %u mV\n", system_mv);
-        }
-
-        float die_temperature_c{};
-        if (results.check(
-                "read die temperature",
-                axp517.readDieTemperatureC(die_temperature_c)))
-        {
-            std::printf("       Die temperature: %.1f C\n", static_cast<double>(die_temperature_c));
-        }
-
-        std::uint32_t interrupts{};
-        if (results.check("read interrupt status", axp517.readInterruptStatus(interrupts)))
-        {
-            std::printf("       Interrupt status: 0x%08lX\n", static_cast<unsigned long>(interrupts));
-        }
-
-        if (power_valid)
-        {
-            testBatteryMeasurements(axp517, power, results);
-            testVbusMeasurements(axp517, power, results);
+            std::printf("VBUS=%s, battery=%s, charging=%s, direction=%s, charge-state=%s",
+                        power.vbus_present ? "present" : "absent",
+                        power.battery_present ? "present" : "absent",
+                        pdl::charge::isBatteryCharging(power) ? "yes" : "no",
+                        currentDirection(power.battery_current_direction),
+                        chargeState(power.charge_state));
         }
         else
         {
-            results.skip("battery measurements", "power status is unavailable");
-            results.skip("VBUS measurements", "power status is unavailable");
+            std::printf("power-status=error(%s)", pdl::statusName(power_error));
         }
 
-        results.check("deinitialize AXP517", axp517.deinitialize());
-        results.check("deinitialize I2C bus", i2c_bus.deinitialize());
-        results.printSummary();
+        if (module_error == pdl::Status::ok)
+        {
+            std::printf(", boost=%s, buck=%s, charger=%s",
+                        modules.boost_enabled ? "enabled" : "disabled",
+                        modules.buck_enabled ? "enabled" : "disabled",
+                        modules.charger_enabled ? "enabled" : "disabled");
+        }
+        else
+        {
+            std::printf(", module-status=error(%s)", pdl::statusName(module_error));
+        }
+
+        std::printf("\n       battery: ");
+        if (percent_error == pdl::Status::ok && voltage_error == pdl::Status::ok && current_error == pdl::Status::ok)
+            std::printf("%u%%, %u mV, %d mA", battery_percent, battery_mv, battery_ma);
+        else
+            std::printf("read error(percent=%s, voltage=%s, current=%s)",
+                        pdl::statusName(percent_error), pdl::statusName(voltage_error),
+                        pdl::statusName(current_error));
+        if (vbus_error == pdl::Status::ok)
+            std::printf(", VBUS=%u mV", vbus_mv);
+        else
+            std::printf(", VBUS=error(%s)", pdl::statusName(vbus_error));
+        if (charger_error == pdl::Status::ok)
+            std::printf(", charger-control=%s", charger_enabled ? "enabled" : "disabled");
+        else
+            std::printf(", charger-control=error(%s)", pdl::statusName(charger_error));
+        std::printf("\n");
     }
 }
 
 extern "C" void app_main(void)
 {
-    runAxp517Test();
+    bsp::Board board;
+    const PowerConfig config = examplePowerConfig();
+    std::printf("\nAXP517 BSP configuration and power monitor\n");
+    const esp_err_t error = board.initializePower(config);
+    if (error != ESP_OK)
+    {
+        std::printf("BSP initialization failed: %s\n", esp_err_to_name(error));
+        return;
+    }
+
+    if (printConfiguration(board, config) != ESP_OK)
+    {
+        (void)board.deinitialize();
+        return;
+    }
+
+    // initializePower() configured the BSP-owned AXP517, including ADC and
+    // fuel gauge. Borrow that driver instead of creating or initializing one.
+    auto bsp_device = board.devices();
+    auto *axp517 = bsp_device.axp517;
+    if (axp517 == nullptr)
+    {
+        std::printf("BSP AXP517 device is not initialized\n");
+        (void)board.deinitialize();
+        return;
+    }
+
+    std::uint16_t vendor_id{};
+    const pdl::Status id_status = axp517->readId(vendor_id);
+    if (pdl::isOk(id_status))
+        std::printf("AXP517 TCPC vendor ID: 0x%04X\n", static_cast<unsigned>(vendor_id));
+    else
+        std::printf("AXP517 vendor ID read failed: %s\n", pdl::statusName(id_status));
+
+    // Allow the newly enabled ADC and fuel gauge to produce measurements.
+    vTaskDelay(pdMS_TO_TICKS(100));
+    while (true)
+    {
+        printPower(*axp517);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
 }

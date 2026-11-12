@@ -1,7 +1,7 @@
 # LR2021 LoRa transmit example
 
-This example initializes the T-Panel-P4 Standard BSP and its LR2021 radio,
-then transmits a numbered text packet every five seconds. GPIO32 enables the
+This example initializes the LR2021 radio through the BSP and transmits a
+numbered text packet every five seconds. GPIO32 enables the
 board's external transmit path only while `radio.transmit()` is running and is
 driven low immediately afterward, including when transmission fails.
 
@@ -13,8 +13,9 @@ your region. Connect a suitable antenna before running the example.
 Build, flash, and monitor from an exported ESP-IDF PowerShell:
 
 ```powershell
-.\build.ps1 lr2021 build
-.\build.ps1 lr2021 flash-monitor COM198
+.\build.ps1 -HardwareVersion standard -Example lr2021 -Action build
+.\build.ps1 -HardwareVersion standard -Example lr2021 -Action flash-monitor -Port COM198
 ```
 
-The isolated build output is stored in `build/lr2021`.
+Use `round` for round hardware. Rect has no LoRa module. The isolated build
+output is stored in `build/<hardware>-lr2021`.

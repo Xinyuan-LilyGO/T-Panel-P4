@@ -1,165 +1,46 @@
 # SD 卡 MP3 播放示例
 
-本示例用于验证 `t_panel_p4_standard` BSP 的音频播放接口。它初始化
-T-Panel-P4 Standard、挂载 SD 卡，然后依次播放 `/music` 目录中的三首
-MP3。示例是 BSP 驱动使用和回归测试，不包含播放列表 UI；播放顺序和测试
-逻辑写在 `main.cpp` 中，实际产品应在应用或音乐服务层管理播放列表。
+本示例使用统一的 `t_panel_p4` BSP，支持 standard、round、rect。程序挂载
+SD 卡后扫描 `/sdcard/music` 中的 MP3 文件（扩展名不区分大小写），最多读取
+64 首，按文件名字节顺序排序并循环播放。目录中的文件名可以自定义。
 
-## SD 卡文件
+## 准备与运行
 
-请将 SD 卡格式化为 BSP 支持的 FAT 文件系统，并创建下面的目录和文件。路径
-大小写、空格、连字符以及 `.mp3` 扩展名都必须一致：
+在 FAT 格式的 SD 卡根目录创建 `music` 文件夹并放入至少一首 MP3。示例启用
+`CONFIG_FATFS_LFN_HEAP=y`，支持长文件名。它不会在挂载失败时格式化 SD 卡。
 
-```text
-/music/Fever Pitch - Richz.mp3
-/music/lilygo.mp3
-/music/Taylor Swift - Love Story.mp3
-```
-
-程序挂载点是 `/sdcard`，因此运行时访问的完整路径为：
-
-```text
-/sdcard/music/Fever Pitch - Richz.mp3
-/sdcard/music/lilygo.mp3
-/sdcard/music/Taylor Swift - Love Story.mp3
-```
-
-示例文件的预期格式如下，最终格式和时长以启动时输出的 `music info` 为准：
-
-| 文件 | 预期格式 |
-| --- | --- |
-| `Fever Pitch - Richz.mp3` | 44.1 kHz，立体声 |
-| `lilygo.mp3` | 16 kHz，单声道 |
-| `Taylor Swift - Love Story.mp3` | 44.1 kHz，立体声 |
-
-## 长文件名配置
-
-两个测试文件包含空格，示例的 `sdkconfig.defaults` 已启用：
-
-```text
-CONFIG_FATFS_LFN_HEAP=y
-```
-
-如果之前已经生成过该示例的构建目录，旧的 `CONFIG_FATFS_LFN_NONE=1` 可能仍
-保存在生成的 `sdkconfig` 中。修改配置后必须执行一次 `fullclean`，不能只运行
-普通 `build`。
-
-## 构建、烧录和运行
-
-请在已经执行 ESP-IDF 5.5.3 `export.ps1` 的 PowerShell 中，从工程根目录执行：
+在已导出 ESP-IDF 5.5.3 环境的 PowerShell 中执行：
 
 ```powershell
-.\build.ps1 -Example audio/play_sd_mp3 -Action fullclean
-.\build.ps1 -Example audio/play_sd_mp3 -Action build
-.\build.ps1 -Example audio/play_sd_mp3 -Action flash-monitor -Port COM198
+.\build.ps1 -HardwareVersion standard -Example audio/play_sd_mp3 -Action build
+.\build.ps1 -HardwareVersion standard -Example audio/play_sd_mp3 -Action flash-monitor -Port COM7
 ```
 
-将 `COM198` 替换为实际串口。也可以分开执行：
+按硬件选择 `standard`、`round` 或 `rect`，将 `COM7` 替换为实际串口。
+输出目录为 `build/<hardware>-audio-play_sd_mp3`。
 
-```powershell
-.\build.ps1 -Example audio/play_sd_mp3 -Action flash -Port COM198
-.\build.ps1 -Example audio/play_sd_mp3 -Action monitor -Port COM198
-```
+## 播放行为
 
-上电后示例会初始化音频、检查三个文件是否存在，然后按顺序播放。任一文件
-缺失时，程序会打印 `/sdcard/music` 的实际目录内容，并以
-`ESP_ERR_NOT_FOUND` 结束，便于检查文件名和 FATFS 长文件名配置。
+- 使用 `initializeSdCard()` 和 `initializeAudio()` 按需初始化，由 BSP 管理资源。
+- ES8389 输出固定为 48 kHz、16-bit、立体声、384× MCLK、-12 dB，关闭录音。
+- `playMusicFile()` 使用 `auto_configure_audio=false`、`allow_resample=true`、
+  `reject_unknown_format=true`。示例 SDK 配置显式启用 GMF 重采样到 48 kHz，
+  BSP 负责启停输出和排空 DMA；歌曲切换复用播放器和音频资源。
+- 使用 BSP 当前板型的 `pins::button` 切换上一首、`pins::boot_button` 切换下一首。
+  按键约每秒采样一次；切歌前等待 `stopMusic(2000)` 完成。
+- `getMusicLyrics()` 尝试读取歌词，存在时打印 UTF-8 文本长度。
+  事件回调打印格式信息和播放错误，主循环每秒打印播放位置与时长。
+- 正常播放结束后自动进入下一首；最后一首结束后回到第一首。
 
-## 本示例验证的 BSP 功能
+没有 MP3 或目录不存在时，扫描返回 `ESP_ERR_NOT_FOUND`；播放失败时记录错误并
+结束循环。短按可能被一秒的按键采样周期漏过，测试时可按住直到切歌。
 
-示例直接调用 `playMusicFile(path, config)` 播放。BSP 会在播放命令内部完成一次
-格式探测，并通过事件回调报告编码器、采样率、声道、比特率和时长。应用只有在
-需要播放前预览元数据时才需要单独调用 `probeMusicFile()`。示例使用固定 48 kHz
-音频输出，输入文件由 GMF 重采样到固定输出，配置为：
+## BSP 接口约定
 
-```cpp
-config.auto_configure_audio = false;
-config.allow_resample = true;
-config.reject_unknown_format = true;
-```
+`allow_resample=true` 不会在运行时启用重采样，仍需编译配置支持。若修改目标
+采样率，必须同时修改音频输出配置；已有构建目录还应检查生成的 `sdkconfig`。
 
-这表示 BSP 不会在歌曲切换时重建 ES8389/I2S；播放器把不同采样率的输入
-重采样到 48 kHz，再经过声道和位深转换输出为 16-bit、双声道 PCM。未知格式
-仍会被拒绝。示例配置中显式启用采样率转换：
-
-```text
-CONFIG_ESP_AUDIO_SIMPLE_PLAYER_RESAMPLE_EN=y
-CONFIG_AUDIO_SIMPLE_PLAYER_RESAMPLE_DEST_RATE=48000
-```
-
-播放器运行时会在三首歌曲之间复用，歌曲切换不会调用
-`reconfigureAudio()`。
-
-示例还会验证并打印：
-
-- SD 卡挂载和三个文件存在性检查。
-- `setMusicEventCallback()` 的状态变化、格式信息和错误回调。
-- `musicFormat()`、`musicDurationMs()`、`musicPositionMs()` 的信息更新。
-- 第一首歌的 `pauseMusic(true)` / `pauseMusic(false)` 暂停和恢复。
-- 第一首歌的 `fadeMusicVolumePercent()` 音量淡入淡出命令。
-- `musicStatistics()` 中的输出字节数、输出调用次数、短写、错误、超时和任务栈余量。
-- `seekMusicMs(1000)` 明确返回 `ESP_ERR_NOT_SUPPORTED`。
-
-`seekMusicMs()` 当前不会伪造进度。ESP Audio Simple Player 没有向 BSP 暴露可用
-的 seek 原语，因此返回不支持是预期行为。真正的 seek 需要底层播放器提供按帧
-定位能力后再实现。
-
-暂停和信息查询的最小用法如下：
-
-```cpp
-ESP_ERROR_CHECK(board.pauseMusic(true));   // 暂停并等待命令完成
-const auto state = board.musicState();
-const auto position_ms = board.musicPositionMs();
-const auto duration_ms = board.musicDurationMs();
-ESP_ERROR_CHECK(board.pauseMusic(false));  // 恢复并等待命令完成
-```
-
-播放事件回调应保持简短，只用于记录或通知应用任务；不要在回调中递归调用
-播放器控制接口。播放列表、循环播放、上一首/下一首等策略不属于 BSP。
-
-## 预期日志
-
-不同 MP3 的实际时长和比特率会不同，以下只列出关键日志类型：
-
-```text
-SD card mounted at /sdcard
-track 1/3: /sdcard/music/Fever Pitch - Richz.mp3, starting fixed-output playback
-music info: ... Hz, ... ch, ... bit, duration=... ms
-fixed audio output: 48000 Hz; resampling=enabled
-pause/resume probe
-volume fade probe
-seek probe: ESP_ERR_NOT_SUPPORTED
-track finished: duration=... ms, output=... bytes, ...
-track 2/3: /sdcard/music/lilygo.mp3, probing media format
-track 3/3: /sdcard/music/Taylor Swift - Love Story.mp3, probing media format
-all 3 tracks completed
-play_sd_mp3 example completed
-```
-
-## 常见问题
-
-### `audio file not found` / `ESP_ERR_NOT_FOUND`
-
-1. 确认文件位于 SD 卡根目录的 `music` 文件夹，而不是工程目录或其他目录。
-2. 检查大小写、空格、连字符和扩展名是否完全一致。
-3. 查看错误前打印的 `/sdcard/music` 目录列表。
-4. 执行 `fullclean` 后重新构建，确认生成配置没有残留
-   `CONFIG_FATFS_LFN_NONE=1`。
-
-### 重采样没有生效
-
-确认生成配置中存在 `CONFIG_ESP_AUDIO_SIMPLE_PLAYER_RESAMPLE_EN=y` 和
-`CONFIG_AUDIO_SIMPLE_PLAYER_RESAMPLE_DEST_RATE=48000`，并执行一次
-`fullclean`。同时确认 BSP 音频初始化使用 48 kHz。
-
-### `seekMusicMs()` 返回 `ESP_ERR_NOT_SUPPORTED`
-
-这是当前 BSP 的明确限制，不表示 SD 卡或 MP3 文件损坏。暂停、恢复、停止和
-实时进度查询仍然可用。
-
-### 播放中止或输出超时
-
-查看 `music error` 和 `track finished` 日志中的错误码及统计信息，重点关注
-`output_short_writes`、`output_errors`、`playback_timeouts` 和任务栈余量。若
-任务栈余量持续过低，应在 BSP 配置中增加播放器任务栈，而不是在应用循环中
-反复重启播放。
+此示例不主动执行暂停、淡入淡出或 seek 测试。产品可通过 BSP 的
+`pauseMusic()`、`fadeMusicVolumePercent()`、`seekMusicMs()` 等接口扩展控制。
+Seek 需要已知时长及底层 GMF 支持，不能假定任意文件都可定位。
+播放事件回调应只记录或通知应用任务，不要在回调中递归调用播放器控制接口。

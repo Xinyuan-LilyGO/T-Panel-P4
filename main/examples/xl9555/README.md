@@ -1,6 +1,6 @@
 # XL9555 hardware test
 
-This example uses the `t_panel_p4_standard` BSP to create the board I2C bus and
+This example uses the shared `t_panel_p4` BSP on standard or round hardware to create the board I2C bus and
 XL9555 driver, then tests the XL9555 at address `0x20` on SDA GPIO3 and SCL
 GPIO2. The example obtains the already initialized driver through
 `Board::ioExpander()` and leaves all resource ownership with the BSP.
@@ -19,7 +19,8 @@ driven low, high, and low for 250 ms each before the original state is restored.
 Build, flash, and monitor from an exported ESP-IDF PowerShell:
 
 ```powershell
-.\build.ps1 xl9555 flash-monitor COM198
+.\build.ps1 -HardwareVersion standard -Example xl9555 -Action flash-monitor -Port COM198
 ```
 
-The build output is stored in `build/xl9555`.
+Use `round` for round hardware. Rect has no XL9555. The build output is stored
+in `build/<hardware>-xl9555`.

@@ -8,18 +8,11 @@
 
 #include <esp32c5_connectivity/esp32c5_connectivity.hpp>
 
-#if T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD
-#include <bsp/t_panel_p4_standard.hpp>
-#include <bsp/t_panel_p4_standard_pins.hpp>
-#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_standard
-#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND
-#include <bsp/t_panel_p4_round.hpp>
-#include <bsp/t_panel_p4_round_pins.hpp>
-#define T_PANEL_P4_FPS_BOARD_NAMESPACE t_panel_p4_round
-#elif T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT
-#error "T_PANEL_P4_HARDWARE_VERSION_RECT is not supported for this example"
-#else
-#error "Unsupported T_PANEL_P4_HARDWARE_VERSION"
+#include <bsp/board.hpp>
+#include <bsp/pins.hpp>
+
+#if T_PANEL_P4_BSP_IS_RECT
+#error "ESP32-C5 example requires standard or round hardware"
 #endif
 
 
@@ -93,24 +86,25 @@ namespace
 
 extern "C" void app_main()
 {
-    bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::Board board;
-    ESP_ERROR_CHECK(board.initialize());
+    bsp::Board board;
+    // The connectivity component needs the BSP to power the ESP32-C5 rail.
+    ESP_ERROR_CHECK(board.initializePower());
 
     connectivity::Esp32c5ConnectivityConfig config{};
     config.expected_sdio.clock_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Clock;
+        bsp::pins::sd2Clock;
     config.expected_sdio.command_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Command;
+        bsp::pins::sd2Command;
     config.expected_sdio.data0_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Data0;
+        bsp::pins::sd2Data0;
     config.expected_sdio.data1_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Data1;
+        bsp::pins::sd2Data1;
     config.expected_sdio.data2_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Data2;
+        bsp::pins::sd2Data2;
     config.expected_sdio.data3_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::sd2Data3;
+        bsp::pins::sd2Data3;
     config.expected_sdio.enable_gpio =
-        bsp::T_PANEL_P4_FPS_BOARD_NAMESPACE::pins::esp32c5Enable;
+        bsp::pins::esp32c5Enable;
 
     connectivity::Esp32c5Connectivity esp32c5;
     ESP_ERROR_CHECK(esp32c5.initialize(config));

@@ -67,12 +67,24 @@ static void status_bar_monitor_task(void *argument)
     (void)argument;
     while (true)
     {
-        status_info_t status = {
-            .battery_percent = -1,
-        };
-        if (s_status_provider != NULL)
-            s_status_provider(&status, s_status_provider_context);
-        status_bar_update(&status);
+        // Share the LVGL lock with sleep preparation: it drains any in-flight
+        // provider read before pausing refresh and removing the PMIC/C5.
+        // Keep this task alive; polling resumes with the display refresh timer.
+        ui_lock();
+        lv_display_t *display = lv_display_get_default();
+        lv_timer_t *refresh_timer = display != NULL
+                                        ? lv_display_get_refr_timer(display)
+                                        : NULL;
+        if (refresh_timer != NULL && !lv_timer_get_paused(refresh_timer))
+        {
+            status_info_t status = {
+                .battery_percent = -1,
+            };
+            if (s_status_provider != NULL)
+                s_status_provider(&status, s_status_provider_context);
+            status_bar_update(&status);
+        }
+        ui_unlock();
         if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000)) != 0U)
             break;
     }

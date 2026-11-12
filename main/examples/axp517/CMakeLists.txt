@@ -4,5 +4,5 @@ list(APPEND EXAMPLE_SRCS
 
 list(APPEND EXAMPLE_PRIV_REQUIRES
     freertos
-    peripheral_drivers_lib
+    t_panel_p4
 )
