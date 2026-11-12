@@ -56,6 +56,11 @@ ESP_ERROR_CHECK(radio.deinitialize());
 `initialize()` initializes NVS, `esp_netif`, and the default event loop when
 requested, starts ESP-Hosted, connects to the C5, validates SDIO wiring and
 reads the remote firmware information. It never erases NVS automatically.
+Connection attempts require the Hosted transport-UP event before issuing
+identity/firmware RPCs: the bundled Hosted implementation may return success
+from `esp_hosted_connect_to_slave()` after logging an internal transport
+failure. Each failed attempt logs whether transport readiness or remote
+identity/firmware validation failed.
 
 The ESP-Hosted component initializes its transport from Kconfig before
 `app_main`, so SDIO pin assignment is compile-time configuration. The runtime

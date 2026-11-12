@@ -30,6 +30,7 @@ namespace
     constexpr EventBits_t kWifiConnectedBit = BIT0;
     constexpr EventBits_t kWorkerStoppedBit = BIT1;
     constexpr EventBits_t kWifiScanDoneBit = BIT2;
+    constexpr EventBits_t kTransportReadyBit = BIT3;
     constexpr std::uint32_t kWifiScanTimeoutMs = 15000U;
 
     bool isVersionZero(const connectivity::Esp32c5FirmwareVersion &version) noexcept
@@ -398,14 +399,28 @@ namespace connectivity
             esp_err_t result = ESP_FAIL;
             for (std::uint8_t attempt = 0; attempt < attempts; ++attempt)
             {
+                const char *phase = "SDIO transport";
                 result = static_cast<esp_err_t>(esp_hosted_connect_to_slave());
+                // This ESP-Hosted version logs transport_drv_reconfigure()
+                // failures but still returns ESP_OK. Require its UP event
+                // before attempting RPC, rather than treating that as success.
+                if (result == ESP_OK &&
+                    (xEventGroupWaitBits(events, kTransportReadyBit, pdFALSE, pdTRUE,
+                                         millisecondsToTicks(1000)) & kTransportReadyBit) == 0U)
+                    result = ESP_ERR_TIMEOUT;
                 if (result == ESP_OK)
+                {
+                    phase = "co-processor identity/firmware validation";
                     result = readAndValidateCoprocessor();
+                }
                 if (result == ESP_OK)
                 {
                     transport_up.store(true);
                     return ESP_OK;
                 }
+                ESP_LOGW(kTag, "C5 connection attempt %u/%u failed during %s: %s",
+                         static_cast<unsigned>(attempt + 1U), static_cast<unsigned>(attempts),
+                         phase, esp_err_to_name(result));
                 if (attempt + 1U < attempts)
                     vTaskDelay(millisecondsToTicks(config.retry_delay_ms));
             }
@@ -740,10 +755,14 @@ namespace connectivity
             {
             case ESP_HOSTED_EVENT_TRANSPORT_UP:
                 self.transport_up.store(true);
+                if (self.events != nullptr)
+                    xEventGroupSetBits(self.events, kTransportReadyBit);
                 break;
             case ESP_HOSTED_EVENT_TRANSPORT_FAILURE:
             case ESP_HOSTED_EVENT_TRANSPORT_DOWN:
                 self.transport_up.store(false);
+                if (self.events != nullptr)
+                    xEventGroupClearBits(self.events, kTransportReadyBit);
                 if (self.state.load() != Esp32c5ConnectivityState::recovering &&
                     self.state.load() != Esp32c5ConnectivityState::stopping)
                 {
