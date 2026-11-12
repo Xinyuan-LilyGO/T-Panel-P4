@@ -4,7 +4,7 @@
 T-Panel-P4 是一个面向 ESP32-P4 触摸屏开发板的 ESP-IDF(V5.5)。
 工程提供板级支持包（BSP）、可复用的外设驱动，以及显示、触摸、摄像头、音频、SD 卡、USB MSC、LoRa、LVGL 和 ESP32-C5 通信等示例应用。
 目前通过 `standard`、`round` 和 `rect` 三个硬件选项支持不同的板卡形态。
-`round` 使用独立的 `t_panel_p4_round` BSP 组件，同时保留标准 BSP 的公开头文件和命名空间，现有标准示例可以直接复用。
+三款开发板共用 [`t_panel_p4` BSP](components/bsp/t_panel_p4/README.md)，每款板的引脚表和 SDK 默认配置单独保存。
 
 ### 开发板
 以下信息来自工程中的 BSP 头文件、屏幕初始化表，以及各示例的 `sdkconfig.defaults` 配置文件。
@@ -12,7 +12,6 @@ T-Panel-P4 是一个面向 ESP32-P4 触摸屏开发板的 ESP-IDF(V5.5)。
 | 项目          | T-Panel-P4 Standard   | T-Panel-P4 Round   | T-Panel-P4 Rect    |
 | ------------- | --------------------- | ------------------ | ------------------ |
 | 硬件选项      | `standard`            | `round`            | `rect`             |
-| BSP 组件      | `t_panel_p4_standard` | `t_panel_p4_round` | `t_panel_p4_rect`  |
 | 主控芯片      | ESP32-P4(V3.2)        | ESP32-P4(V3.2)     | ESP32-P4(V3.2)     |
 | SPI NOR Flash | 16 MB                 | 16 MB              | 16 MB              |
 | 外部 PSRAM    | 32MB                  | 32MB               | 32MB               |
@@ -29,7 +28,7 @@ T-Panel-P4 是一个面向 ESP32-P4 触摸屏开发板的 ESP-IDF(V5.5)。
 | 传感器        | ---                   | ---                | QMI8656C & QMC6309 |
 | 电机          | ---                   | ---                | DRV2605            |
 
-ESP-IDF 示例存放在 `main/examples` 目录下。根工程在配置阶段选择一个硬件版本、对应的 BSP，以及一个示例目录。
+ESP-IDF 示例存放在 `main/examples` 目录下。根工程在配置阶段为共用 BSP 选择硬件配置，并选择一个示例目录。
 选择逻辑位于 `cmake/t_panel_p4_config.cmake`。
 请在工程根目录执行编译；`main/examples` 下的目录是示例片段，并不是可以独立编译的 ESP-IDF 工程。
 
@@ -95,19 +94,19 @@ VS Code 命令面板中也提供了以下任务：
 ESP-IDF 插件的 `Build Project` 按钮可以编译 `.vscode/settings.json` 中配置的变体。
 它不会弹出硬件和示例选择框；如果需要编译其他变体，需要先修改配置文件。
 
-例如，编译 `rect` 硬件的 `lcd/ili9882` 示例，需要同步设置构建路径和 CMake 参数：
+例如，编译 `rect` 硬件的 `lcd_touch` 示例，需要同步设置构建路径和 CMake 参数：
 
 ```json
 {
-  "idf.buildPath": "${workspaceFolder}/build/rect-lcd-ili9882",
-  "idf.buildPathWin": "${workspaceFolder}\\build\\rect-lcd-ili9882",
+  "idf.buildPath": "${workspaceFolder}/build/rect-lcd_touch",
+  "idf.buildPathWin": "${workspaceFolder}\\build\\rect-lcd_touch",
   "idf.cmakeCompilerArgs": [
     "-G",
     "Ninja",
     "-DPYTHON_DEPS_CHECKED=1",
     "-DESP_PLATFORM=1",
     "-DT_PANEL_P4_HARDWARE_VERSION=rect",
-    "-DT_PANEL_P4_EXAMPLE=lcd/ili9882"
+    "-DT_PANEL_P4_EXAMPLE=lcd_touch"
   ],
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32p4",
@@ -136,12 +135,12 @@ ESP-IDF 插件的 `Build Project` 按钮可以编译 `.vscode/settings.json` 中
 idf.py -B build/standard-factory_standard `
     -D T_PANEL_P4_HARDWARE_VERSION=standard `
     -D T_PANEL_P4_EXAMPLE=factory_standard build
-idf.py -B build/rect-lcd-ili9882 `
+idf.py -B build/rect-lcd_touch `
     -D T_PANEL_P4_HARDWARE_VERSION=rect `
-    -D T_PANEL_P4_EXAMPLE=lcd/ili9882 build
-idf.py -B build/round-factory_standard `
+    -D T_PANEL_P4_EXAMPLE=lcd_touch build
+idf.py -B build/round-factory_round `
     -D T_PANEL_P4_HARDWARE_VERSION=round `
-    -D T_PANEL_P4_EXAMPLE=factory_standard build
+    -D T_PANEL_P4_EXAMPLE=factory_round build
 ```
 
 ## 添加示例
@@ -153,7 +152,7 @@ list(APPEND EXAMPLE_SRCS
 )
 list(APPEND EXAMPLE_PRIV_REQUIRES
     peripheral_drivers_lib
-    t_panel_p4_standard
+    t_panel_p4
 )
 ```
 

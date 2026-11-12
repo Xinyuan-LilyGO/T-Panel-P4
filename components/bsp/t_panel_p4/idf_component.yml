@@ -1,0 +1,35 @@
+dependencies:
+  espressif/esp_codec_dev:
+    version: "1.5.11"
+    require: public
+  espressif/esp_audio_codec:
+    version: "~2.5"
+    matches:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [rect]'
+        version: "2.5.0"
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [standard, round]'
+  espressif/esp_audio_effects:
+    version: "1.3.0~1"
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [rect]'
+  espressif/gmf_audio:
+    version: "~1.0"
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [rect]'
+  espressif/gmf_core:
+    version: "~1.0"
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [rect]'
+  espressif/gmf_io:
+    version: "~1.0"
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [rect]'
+  espressif/esp_audio_simple_player:
+    version: "1.0.0"
+  espressif/esp_tinyusb:
+    version: "2.0.0"
+  jgromes/radiolib:
+    version: "7.7.1"
+    require: public
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [standard, round]'

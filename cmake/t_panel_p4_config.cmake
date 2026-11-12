@@ -1,4 +1,4 @@
-# Select the board hardware, its BSP component, and the example to build.
+# Select the hardware profile of the shared BSP and the example to build.
 #
 # This file is included by the project CMakeLists.txt before ESP-IDF's
 # project.cmake. Keep all paths absolute: ESP-IDF evaluates generated
@@ -39,17 +39,14 @@ if(_hardware_index EQUAL -1)
 endif()
 
 if(T_PANEL_P4_HARDWARE_VERSION STREQUAL "standard")
-    set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_standard")
     set(T_PANEL_P4_HARDWARE_VERSION_VALUE 1)
     set(T_PANEL_P4_HAS_ESP32C5 TRUE)
     set(T_PANEL_P4_HAS_LORA TRUE)
 elseif(T_PANEL_P4_HARDWARE_VERSION STREQUAL "rect")
-    set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_rect")
     set(T_PANEL_P4_HARDWARE_VERSION_VALUE 2)
     set(T_PANEL_P4_HAS_ESP32C5 FALSE)
     set(T_PANEL_P4_HAS_LORA FALSE)
 elseif(T_PANEL_P4_HARDWARE_VERSION STREQUAL "round")
-    set(T_PANEL_P4_BSP_COMPONENT "t_panel_p4_round")
     set(T_PANEL_P4_HARDWARE_VERSION_VALUE 3)
     set(T_PANEL_P4_HAS_ESP32C5 TRUE)
     set(T_PANEL_P4_HAS_LORA TRUE)
@@ -66,18 +63,13 @@ set(T_PANEL_P4_HARDWARE_COMPILE_DEFINITIONS
     "T_PANEL_P4_HARDWARE_VERSION_ROUND=3")
 
 set(T_PANEL_P4_BSP_DIR
-    "${T_PANEL_P4_PROJECT_DIR}/components/bsp/${T_PANEL_P4_BSP_COMPONENT}")
-set(T_PANEL_P4_BSP_CMAKE_FILE
-    "${T_PANEL_P4_BSP_DIR}/CMakeLists.txt")
+    "${T_PANEL_P4_PROJECT_DIR}/components/bsp/t_panel_p4")
+set(T_PANEL_P4_BSP_PROFILE_DIR
+    "${T_PANEL_P4_BSP_DIR}/profiles/${T_PANEL_P4_HARDWARE_VERSION}")
 set(T_PANEL_P4_BSP_DEFAULTS
-    "${T_PANEL_P4_BSP_DIR}/sdkconfig.defaults")
+    "${T_PANEL_P4_BSP_PROFILE_DIR}/sdkconfig.defaults")
 set(T_PANEL_P4_BSP_LVGL_DEFAULTS
-    "${T_PANEL_P4_BSP_DIR}/sdkconfig.lvgl.defaults")
-if(NOT EXISTS "${T_PANEL_P4_BSP_CMAKE_FILE}")
-    message(FATAL_ERROR
-        "BSP CMake file does not exist for hardware version "
-        "'${T_PANEL_P4_HARDWARE_VERSION}': ${T_PANEL_P4_BSP_CMAKE_FILE}")
-endif()
+    "${T_PANEL_P4_BSP_PROFILE_DIR}/sdkconfig.lvgl.defaults")
 
 # Keep the old board variable available to existing example CMake files and
 # build scripts without creating a second cache setting to maintain.
@@ -99,17 +91,13 @@ set_property(CACHE T_PANEL_P4_EXAMPLE PROPERTY STRINGS
     audio/loopback
     audio/play_wav
     audio/play_sd_mp3
-    lcd/ili9882
-    lcd/jd9365
-    lcd/jd9365da
+    lcd_touch
     lr2021
     lvgl_fps_test
     lvgl_lcd_touch
     rect_lowpower_test
     sd
     sdio_esp32c5
-    touch/jadard
-    touch/gt911
     usb_msc)
 
 string(TOLOWER "${T_PANEL_P4_EXAMPLE}" T_PANEL_P4_EXAMPLE)
@@ -154,32 +142,23 @@ if(T_PANEL_P4_EXAMPLE STREQUAL "lr2021" AND NOT T_PANEL_P4_HAS_LORA)
         "'${T_PANEL_P4_HARDWARE_VERSION}' has no LoRa module.")
 endif()
 
-# An example declares its BSP in its own CMake file. Catch a board/example
-# mismatch while configuring instead of failing later during component
-# dependency resolution.
-file(READ "${T_PANEL_P4_EXAMPLE_CMAKE}" _example_cmake_contents)
-string(REGEX MATCHALL "t_panel_p4_[a-z0-9_]+" _example_bsp_components
-    "${_example_cmake_contents}")
-list(REMOVE_DUPLICATES _example_bsp_components)
-foreach(_example_bsp_component IN LISTS _example_bsp_components)
-    # The round BSP intentionally keeps the standard BSP's public header and
-    # namespace, so existing standard examples can run on the round board.
-    set(_example_bsp_compatible FALSE)
-    if(_example_bsp_component STREQUAL T_PANEL_P4_BSP_COMPONENT)
-        set(_example_bsp_compatible TRUE)
-    elseif(T_PANEL_P4_HARDWARE_VERSION STREQUAL "round" AND
-           _example_bsp_component STREQUAL "t_panel_p4_standard")
-        set(_example_bsp_compatible TRUE)
-    endif()
-    if(NOT _example_bsp_compatible)
+# Factory UIs and the low-power example still need matching hardware.
+# Shared examples such as axp517 and lcd_touch work on all profiles.
+set(_standard_only factory_standard)
+set(_round_only factory_round)
+set(_rect_only rect_lowpower_test)
+foreach(_profile IN LISTS _supported_hardware_versions)
+    if(T_PANEL_P4_EXAMPLE IN_LIST _${_profile}_only AND
+       NOT T_PANEL_P4_HARDWARE_VERSION STREQUAL _profile)
         message(FATAL_ERROR
-            "Example '${T_PANEL_P4_EXAMPLE}' requires BSP "
-            "'${_example_bsp_component}', but hardware version "
-            "'${T_PANEL_P4_HARDWARE_VERSION}' selects "
-            "'${T_PANEL_P4_BSP_COMPONENT}'.")
+            "Example '${T_PANEL_P4_EXAMPLE}' requires '${_profile}' hardware.")
     endif()
 endforeach()
+if(T_PANEL_P4_EXAMPLE STREQUAL "xl9555" AND
+   T_PANEL_P4_HARDWARE_VERSION STREQUAL "rect")
+    message(FATAL_ERROR "Example 'xl9555' requires the XL9555 on standard or round hardware.")
+endif()
 
 message(STATUS "T-Panel-P4 hardware version: ${T_PANEL_P4_HARDWARE_VERSION}")
-message(STATUS "T-Panel-P4 BSP: ${T_PANEL_P4_BSP_CMAKE_FILE}")
+message(STATUS "T-Panel-P4 BSP: ${T_PANEL_P4_BSP_DIR}")
 message(STATUS "T-Panel-P4 example: ${T_PANEL_P4_EXAMPLE_DIR}")

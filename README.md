@@ -3,12 +3,11 @@
 ## Project overview
 
 T-Panel-P4 is an ESP-IDF 5.5 project for ESP32-P4 touch-panel development
-boards. It provides board support packages (BSPs), reusable peripheral drivers,
+boards. It provides a shared board support package (BSP), reusable peripheral drivers,
 and example applications for display, touch, camera, audio, SD card, USB MSC,
 LoRa, LVGL, and ESP32-C5 connectivity. The project supports the `standard`,
-`round`, and `rect` hardware selections. The `round` hardware uses the separate
-`t_panel_p4_round` BSP component while keeping the standard BSP's public headers
-and namespace, so existing standard examples can be reused directly.
+`round`, and `rect` hardware selections. All three use the [`t_panel_p4` BSP](components/bsp/t_panel_p4/README.md),
+with a separate pin map and SDK defaults for each hardware version.
 
 ### Hardware and display specifications
 
@@ -18,7 +17,6 @@ tables, and example `sdkconfig.defaults` files in this repository.
 | Item               | T-Panel-P4 Standard   | T-Panel-P4 Round   | T-Panel-P4 Rect    |
 | ------------------ | --------------------- | ------------------ | ------------------ |
 | Hardware selection | `standard`            | `round`            | `rect`             |
-| BSP component      | `t_panel_p4_standard` | `t_panel_p4_round` | `t_panel_p4_rect`  |
 | Main controller    | ESP32-P4(V3.2)        | ESP32-P4(V3.2)     | ESP32-P4(V3.2)     |
 | SPI NOR Flash      | 16 MB                 | 16 MB              | 16 MB              |
 | PSRAM              | 32MB                  | 32MB               | 32MB               |
@@ -36,7 +34,7 @@ tables, and example `sdkconfig.defaults` files in this repository.
 | Motor              | ---                   | ---                | DRV2605            |
 
 ESP-IDF examples are stored under `main/examples`. The root project selects
-one hardware version, its BSP, and one example directory at configure time.
+one hardware profile for the shared BSP and one example directory at configure time.
 The selection logic is kept in `cmake/t_panel_p4_config.cmake`.
 Build from the repository root; the directories under `main/examples` contain
 example fragments, not standalone ESP-IDF projects.
@@ -49,8 +47,8 @@ Run these commands from an exported ESP-IDF PowerShell in the repository root:
 .\build.ps1 -HardwareVersion standard -Example factory_standard -Action build
 .\build.ps1 -HardwareVersion standard -Example axp517 -Action build
 .\build.ps1 -HardwareVersion standard -Example xl9555 -Action build
-.\build.ps1 -HardwareVersion round -Example factory_standard -Action build
-.\build.ps1 -HardwareVersion rect -Example lcd/ili9882 -Action build
+.\build.ps1 -HardwareVersion round -Example factory_round -Action build
+.\build.ps1 -HardwareVersion rect -Example lcd_touch -Action build
 .\build.ps1 -HardwareVersion rect -Example rect_lowpower_test -Action build
 ```
 
@@ -63,8 +61,8 @@ The outputs are kept in separate subdirectories under `build`:
 build/standard-factory_standard/
 build/standard-axp517/
 build/standard-xl9555/
-build/round-factory_standard/
-build/rect-lcd-ili9882/
+build/round-factory_round/
+build/rect-lcd_touch/
 build/rect-rect_lowpower_test/
 ```
 
@@ -125,12 +123,12 @@ Command format:
 
 ```powershell
 .\build.ps1 -HardwareVersion standard -Example factory_standard -Action build
-.\build.ps1 -HardwareVersion round -Example factory_standard -Action build
-.\build.ps1 -HardwareVersion rect -Example lcd/ili9882 -Action build
+.\build.ps1 -HardwareVersion round -Example factory_round -Action build
+.\build.ps1 -HardwareVersion rect -Example lcd_touch -Action build
 ```
 
 The script creates the build directory from both selections, for example
-`build/standard-factory_standard` or `build/rect-lcd-ili9882`.
+`build/standard-factory_standard` or `build/rect-lcd_touch`.
 
 ### 2. VS Code task
 
@@ -150,20 +148,20 @@ The ESP-IDF extension's `Build Project` button can build the variant configured
 in `.vscode/settings.json`. It does not display the hardware/example picker;
 edit the settings before building another variant.
 
-For example, to build the `rect` hardware with the `lcd/ili9882` example, set
+For example, to build the `rect` hardware with the `lcd_touch` example, set
 the build paths and CMake arguments together:
 
 ```json
 {
-  "idf.buildPath": "${workspaceFolder}/build/rect-lcd-ili9882",
-  "idf.buildPathWin": "${workspaceFolder}\\build\\rect-lcd-ili9882",
+  "idf.buildPath": "${workspaceFolder}/build/rect-lcd_touch",
+  "idf.buildPathWin": "${workspaceFolder}\\build\\rect-lcd_touch",
   "idf.cmakeCompilerArgs": [
     "-G",
     "Ninja",
     "-DPYTHON_DEPS_CHECKED=1",
     "-DESP_PLATFORM=1",
     "-DT_PANEL_P4_HARDWARE_VERSION=rect",
-    "-DT_PANEL_P4_EXAMPLE=lcd/ili9882"
+    "-DT_PANEL_P4_EXAMPLE=lcd_touch"
   ],
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32p4",
@@ -196,12 +194,12 @@ The equivalent direct `idf.py` commands are:
 idf.py -B build/standard-factory_standard `
     -D T_PANEL_P4_HARDWARE_VERSION=standard `
     -D T_PANEL_P4_EXAMPLE=factory_standard build
-idf.py -B build/rect-lcd-ili9882 `
+idf.py -B build/rect-lcd_touch `
     -D T_PANEL_P4_HARDWARE_VERSION=rect `
-    -D T_PANEL_P4_EXAMPLE=lcd/ili9882 build
-idf.py -B build/round-factory_standard `
+    -D T_PANEL_P4_EXAMPLE=lcd_touch build
+idf.py -B build/round-factory_round `
     -D T_PANEL_P4_HARDWARE_VERSION=round `
-    -D T_PANEL_P4_EXAMPLE=factory_standard build
+    -D T_PANEL_P4_EXAMPLE=factory_round build
 ```
 
 ## Add an example
@@ -215,7 +213,7 @@ list(APPEND EXAMPLE_SRCS
 )
 list(APPEND EXAMPLE_PRIV_REQUIRES
     peripheral_drivers_lib
-    t_panel_p4_standard
+    t_panel_p4
 )
 ```
 

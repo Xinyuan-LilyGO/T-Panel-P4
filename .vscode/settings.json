@@ -7,8 +7,29 @@
     "IDF_TARGET": "esp32p4",
     "IDF_COMPONENT_MANAGER": "1"
   },
-  "tPanelP4.hardwareVersion": "round",
-  "tPanelP4.example": "factory_round",
+  /* Select the hardware board to be compiled */
+  "tPanelP4.hardwareVersion": "standard",
+  // "tPanelP4.hardwareVersion": "round",
+  // "tPanelP4.hardwareVersion": "rect",
+
+  /* Select the example to be compiled */
+  // "tPanelP4.example": "audio/loopback",
+  // "tPanelP4.example": "audio/play_sd_mp3",
+  // "tPanelP4.example": "audio/play_wav",
+  // "tPanelP4.example": "axp517",
+  // "tPanelP4.example": "camera",
+  // "tPanelP4.example": "lcd_touch",
+  // "tPanelP4.example": "lr2021",
+  // "tPanelP4.example": "lvgl_fps_test",
+  // "tPanelP4.example": "lvgl_lcd_touch",
+  // "tPanelP4.example": "sd",
+  // "tPanelP4.example": "sdio_esp32c5",
+  // "tPanelP4.example": "usb_msc",
+  // "tPanelP4.example": "xl9555",
+  "tPanelP4.example": "factory_standard",
+  // "tPanelP4.example": "factory_round",
+  // "tPanelP4.example": "factory_rect",
+
   "tPanelP4.buildDirectory": "${config:tPanelP4.hardwareVersion}-${config:tPanelP4.example}",
   "idf.buildPath": "${workspaceFolder}/build/${config:tPanelP4.buildDirectory}",
   "idf.buildPathWin": "${workspaceFolder}\\build\\${config:tPanelP4.buildDirectory}",
@@ -20,5 +41,5 @@
     "-DT_PANEL_P4_HARDWARE_VERSION=${config:tPanelP4.hardwareVersion}",
     "-DT_PANEL_P4_EXAMPLE=${config:tPanelP4.example}"
   ],
-  "idf.portWin": "COM236"
+  "idf.portWin": "COM232",
 }

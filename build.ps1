@@ -9,9 +9,7 @@ param(
     [ValidateSet('build', 'flash', 'monitor', 'flash-monitor', 'menuconfig', 'reconfigure', 'fullclean')]
     [string]$Action = 'build',
 
-    [string]$Port = '',
-
-    [switch]$OnlineDependencies
+    [string]$Port = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,35 +31,9 @@ if (-not (Test-Path -LiteralPath $exampleCMake -PathType Leaf)) {
 }
 
 $buildDirectory = Join-Path $PSScriptRoot "build/$HardwareVersion-$($Example.Replace('/', '-'))"
-$buildAlreadyConfigured = Test-Path -LiteralPath (Join-Path $buildDirectory 'CMakeCache.txt') -PathType Leaf
-
-# Use the local managed components when they are available. A fresh checkout
-# may not contain them yet; allow the ESP-IDF component manager to fetch the
-# locked dependencies during the first configure instead of passing missing
-# directories to COMPONENT_DIRS.
-$managedComponentNames = @('jgromes__radiolib', 'lvgl__lvgl')
-$managedComponentRoot = Join-Path $PSScriptRoot 'managed_components'
-$missingManagedComponents = @()
-if ($Example -ne 'lcd/ili9882') {
-    $missingManagedComponents = @($managedComponentNames | Where-Object {
-        -not (Test-Path -LiteralPath (Join-Path $managedComponentRoot $_) -PathType Container)
-    })
-}
-# A new variant needs the component manager to resolve registry package names
-# (for example, `espressif/esp_audio_codec` -> `esp_audio_codec`). Once CMake
-# has configured the variant, keep the existing offline behavior for repeat
-# builds unless the caller explicitly requests an online refresh.
-if ($OnlineDependencies -or -not $buildAlreadyConfigured) {
-    $env:IDF_COMPONENT_MANAGER = '1'
-} elseif ($missingManagedComponents.Count -gt 0) {
-    Write-Warning ((
-        "Managed components are missing ({0}); enabling the ESP-IDF component " +
-        "manager for this configure. Dependencies are locked by dependencies.lock."
-    ) -f ($missingManagedComponents -join ', '))
-    $env:IDF_COMPONENT_MANAGER = '1'
-} else {
-    $env:IDF_COMPONENT_MANAGER = '0'
-}
+# The shared BSP declares its managed dependencies per hardware profile. Keep
+# the component manager enabled on reconfigure so it can apply those rules.
+$env:IDF_COMPONENT_MANAGER = '1'
 
 if (-not $env:IDF_PATH) {
     throw 'IDF_PATH is not set. Run this script from an exported ESP-IDF shell.'

@@ -10,8 +10,7 @@ set(_sdkconfig_defaults "")
 # on these ESP Audio Simple Player defaults. Keep them in the BSP so audio
 # examples do not need to duplicate the resampling/channel/bit-depth contract.
 set(_bsp_audio_defaults "${T_PANEL_P4_BSP_DEFAULTS}")
-if(EXISTS "${_bsp_audio_defaults}" AND
-   NOT T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
+if(EXISTS "${_bsp_audio_defaults}")
     list(APPEND _sdkconfig_defaults "${_bsp_audio_defaults}")
 endif()
 
@@ -109,9 +108,7 @@ else()
     list(APPEND EXCLUDE_COMPONENTS esp32c5_connectivity)
 endif()
 
-if(T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
-    set(ENV{T_PANEL_P4_RECT_LCD_ONLY} "1")
-endif()
+set(ENV{T_PANEL_P4_BSP_PROFILE} "${T_PANEL_P4_HARDWARE_VERSION}")
 
 if(NOT T_PANEL_P4_HAS_LORA)
     # Rect hardware has no LoRa module, so do not discover the managed
@@ -126,7 +123,7 @@ if("$ENV{IDF_COMPONENT_MANAGER}" STREQUAL "0")
             "${CMAKE_CURRENT_LIST_DIR}/managed_components/jgromes__radiolib"
             "${CMAKE_CURRENT_LIST_DIR}/managed_components/lvgl__lvgl"
         )
-    elseif(NOT T_PANEL_P4_EXAMPLE STREQUAL "lcd/ili9882")
+    else()
         list(APPEND COMPONENT_DIRS
             "${CMAKE_CURRENT_LIST_DIR}/managed_components/lvgl__lvgl"
         )

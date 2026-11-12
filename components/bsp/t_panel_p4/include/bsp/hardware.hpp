@@ -1,0 +1,20 @@
+#pragma once
+
+#if !defined(T_PANEL_P4_HARDWARE_VERSION) || !defined(T_PANEL_P4_HARDWARE_VERSION_STANDARD) || \
+    !defined(T_PANEL_P4_HARDWARE_VERSION_ROUND) || !defined(T_PANEL_P4_HARDWARE_VERSION_RECT)
+#error "Select the T-Panel-P4 hardware version in the project build"
+#endif
+
+#define T_PANEL_P4_BSP_IS_STANDARD (T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_STANDARD)
+#define T_PANEL_P4_BSP_IS_ROUND (T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_ROUND)
+#define T_PANEL_P4_BSP_IS_RECT (T_PANEL_P4_HARDWARE_VERSION == T_PANEL_P4_HARDWARE_VERSION_RECT)
+
+#if T_PANEL_P4_BSP_IS_STANDARD
+#define T_PANEL_P4_BSP_NAMESPACE t_panel_p4_standard
+#elif T_PANEL_P4_BSP_IS_ROUND
+#define T_PANEL_P4_BSP_NAMESPACE t_panel_p4_round
+#elif T_PANEL_P4_BSP_IS_RECT
+#define T_PANEL_P4_BSP_NAMESPACE t_panel_p4_rect
+#else
+#error "Unsupported T-Panel-P4 hardware version"
+#endif
