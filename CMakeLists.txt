@@ -140,7 +140,18 @@ idf_build_set_property(COMPILE_DEFINITIONS
 
 idf_build_set_property(MINIMAL_BUILD ON)
 string(REPLACE "/" "-" _project_example "${T_PANEL_P4_EXAMPLE}")
+# ESP-IDF reads this output path while project() creates the merge-bin target.
+set(_merged_binary "${CMAKE_BINARY_DIR}/T-Panel-P4-${T_PANEL_P4_HARDWARE_VERSION}-${_project_example}-merged.bin")
+set(ENV{ESP_MERGE_BIN_OUTPUT} "${_merged_binary}")
 project(T-Panel-P4-${_project_example})
+
+# Reuse ESP-IDF's flash layout to produce a complete image on normal builds.
+# The partition table must also be ready before merge-bin runs on a clean build.
+if(CONFIG_APP_BUILD_GENERATE_BINARIES AND TARGET merge-bin)
+    add_dependencies(merge-bin partition_table_bin)
+    add_custom_target(merged_firmware ALL DEPENDS merge-bin)
+    set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_CLEAN_FILES "${_merged_binary}")
+endif()
 
 message(STATUS "T-Panel-P4 example: ${T_PANEL_P4_EXAMPLE}")
 message(STATUS "T-Panel-P4 build directory: ${CMAKE_BINARY_DIR}")
