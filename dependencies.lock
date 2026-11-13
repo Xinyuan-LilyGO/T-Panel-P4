@@ -265,6 +265,6 @@ direct_dependencies:
 - jgromes/radiolib
 - lvgl/lvgl
 - peripheral_drivers_lib
-manifest_hash: 8c27e5dd7567384e337456ef98dd69884b7da3a70a02455afcf05babf4912270
+manifest_hash: 7758d330189f2cd8867f46395057f8e8681bcf647fbf03cc74a90f27d941a94c
 target: esp32p4
 version: 2.0.0

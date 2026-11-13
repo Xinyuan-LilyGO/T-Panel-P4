@@ -35,5 +35,5 @@ dependencies:
       - if: '${T_PANEL_P4_BSP_PROFILE} in [standard, round]'
   peripheral_drivers_lib:
     git: https://github.com/AQiang77/Peripheral_dirvers_lib.git
-    version: "master"
+    version: "1.0.0"
     require: public
