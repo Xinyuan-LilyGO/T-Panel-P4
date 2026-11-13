@@ -242,6 +242,14 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 9.5.0
+  peripheral_drivers_lib:
+    component_hash: 4157cd31ed06a7b15e352f7e94a279dc66d217612e012a93a88fb45475ac553e
+    dependencies: []
+    source:
+      git: https://github.com/AQiang77/Peripheral_dirvers_lib.git
+      path: .
+      type: git
+    version: c05254409378405a9853bb0baa124ddc00abca94
 direct_dependencies:
 - espressif/esp_audio_codec
 - espressif/esp_audio_effects
@@ -256,6 +264,7 @@ direct_dependencies:
 - idf
 - jgromes/radiolib
 - lvgl/lvgl
-manifest_hash: 9d220063d67fd437a96a877a1e89f11578dafbf1a7730e67dd01815c515d904c
+- peripheral_drivers_lib
+manifest_hash: 8c27e5dd7567384e337456ef98dd69884b7da3a70a02455afcf05babf4912270
 target: esp32p4
 version: 2.0.0

@@ -87,7 +87,6 @@ set(COMPONENT_DIRS
     "${_generated_main_dir}"
     "${T_PANEL_P4_BSP_DIR}"
     "${CMAKE_CURRENT_LIST_DIR}/components/lvgl_page_manager"
-    "${CMAKE_CURRENT_LIST_DIR}/components/peripheral_drivers_lib"
 )
 
 set(_c5_examples
