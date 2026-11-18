@@ -333,13 +333,13 @@ namespace factory::ui
                 else if (result != ESP_OK)
                     lv_label_set_text_fmt(s_settings_popup_message,
                                           s_settings_action == SETTINGS_ACTION_SHIP
-                                              ? "SHIP MODE FAILED\n%s"
+                                              ? "SHUTDOWN FAILED\n%s"
                                               : "SLEEP FAILED\n%s",
                                           esp_err_to_name(result));
                 else if (s_settings_action == SETTINGS_ACTION_LIGHT_SLEEP)
                     lv_label_set_text(s_settings_popup_message, "LIGHT SLEEP COMPLETE");
                 else if (s_settings_action == SETTINGS_ACTION_SHIP)
-                    lv_label_set_text(s_settings_popup_message, "SHIP MODE ENTERED");
+                    lv_label_set_text(s_settings_popup_message, "SHUTDOWN COMPLETE");
                 else
                     lv_label_set_text(s_settings_popup_message, "SLEEP COMPLETE");
                 if (s_ship_refresh_timer != NULL)
@@ -380,7 +380,7 @@ namespace factory::ui
             {
                 s_ship_running = false;
                 lv_timer_pause(s_ship_refresh_timer);
-                lv_label_set_text(s_settings_popup_message, "SHIP MODE FAILED: NO TASK MEMORY");
+                lv_label_set_text(s_settings_popup_message, "SHUTDOWN FAILED: NO TASK MEMORY");
             }
         }
 
@@ -914,7 +914,7 @@ namespace factory::ui
                 lv_obj_set_size(s_settings_popup_alt, kPopupContentWidth, 48);
                 lv_label_set_text(lv_obj_get_child(s_settings_popup_alt, 0), "CLOSE");
                 lv_obj_clear_flag(s_settings_popup_alt, LV_OBJ_FLAG_HIDDEN);
-                lv_label_set_text(s_settings_popup_message, "SHIP MODE IN PROGRESS");
+                lv_label_set_text(s_settings_popup_message, "SHUTDOWN IN PROGRESS");
                 settings_ship_start();
                 return;
             }
@@ -1250,8 +1250,8 @@ namespace factory::ui
                 body = settings_control_is_sd_msc_enabled() ? "DISABLE SD-MSC MODE?" : "ENABLE SD-MSC MODE?";
                 break;
             case SETTINGS_ACTION_SHIP:
-                title = "SHIP MODE";
-                body = "POWER DOWN FOR SHIPPING?";
+                title = "SHUTDOWN";
+                body = "SHUT DOWN NOW?";
                 break;
             case SETTINGS_ACTION_DEEP_SLEEP:
                 title = "DEEP SLEEP";
@@ -1297,11 +1297,9 @@ namespace factory::ui
             {
                 settings_button(s_settings_menu, "CHARGE / BATTERY STATUS", 0, 0, kPopupContentWidth, 52,
                                 settings_monitor_cb, nullptr, UI_WIHTE);
-                settings_button(s_settings_menu, "SHIP MODE", 0, 70, kPopupContentWidth, 52,
+                settings_button(s_settings_menu, "SHUTDOWN", 0, 70, kPopupContentWidth, 52,
                                 settings_system_cb, reinterpret_cast<void *>(SETTINGS_ACTION_SHIP), UI_WIHTE);
-                settings_button(s_settings_menu, "DEEP SLEEP", 0, 140, kPopupContentWidth, 52,
-                                settings_system_cb, reinterpret_cast<void *>(SETTINGS_ACTION_DEEP_SLEEP), UI_WIHTE);
-                settings_button(s_settings_menu, "LIGHT SLEEP", 0, 210, kPopupContentWidth, 52,
+                settings_button(s_settings_menu, "LIGHT SLEEP", 0, 140, kPopupContentWidth, 52,
                                 settings_system_cb, reinterpret_cast<void *>(SETTINGS_ACTION_LIGHT_SLEEP), UI_WIHTE);
             }
             else

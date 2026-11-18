@@ -265,13 +265,13 @@ static void settings_ship_ui_refresh(lv_timer_t *timer)
         else if (result != ESP_OK)
             lv_label_set_text_fmt(s_settings_popup_message,
                                   s_settings_action == SETTINGS_ACTION_SHIP
-                                      ? "SHIP MODE FAILED\n%s"
+                                      ? "SHUTDOWN FAILED\n%s"
                                       : "SLEEP FAILED\n%s",
                                   esp_err_to_name(result));
         else if (s_settings_action == SETTINGS_ACTION_LIGHT_SLEEP)
             lv_label_set_text(s_settings_popup_message, "LIGHT SLEEP COMPLETE");
         else if (s_settings_action == SETTINGS_ACTION_SHIP)
-            lv_label_set_text(s_settings_popup_message, "SHIP MODE ENTERED");
+            lv_label_set_text(s_settings_popup_message, "SHUTDOWN COMPLETE");
         else
             lv_label_set_text(s_settings_popup_message, "SLEEP COMPLETE");
         if (s_ship_refresh_timer != NULL)
@@ -312,7 +312,7 @@ static void settings_ship_start(void)
     {
         s_ship_running = false;
         lv_timer_pause(s_ship_refresh_timer);
-        lv_label_set_text(s_settings_popup_message, "SHIP MODE FAILED: NO TASK MEMORY");
+        lv_label_set_text(s_settings_popup_message, "SHUTDOWN FAILED: NO TASK MEMORY");
     }
 }
 
@@ -821,7 +821,7 @@ static void settings_popup_yes_cb(lv_event_t *event)
         lv_obj_set_size(s_settings_popup_alt, 512, 48);
         lv_label_set_text(lv_obj_get_child(s_settings_popup_alt, 0), "CLOSE");
         lv_obj_clear_flag(s_settings_popup_alt, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(s_settings_popup_message, "SHIP MODE IN PROGRESS");
+        lv_label_set_text(s_settings_popup_message, "SHUTDOWN IN PROGRESS");
         settings_ship_start();
         return;
     }
@@ -1139,8 +1139,8 @@ static void settings_system_cb(lv_event_t *event)
         body = settings_control_is_sd_msc_enabled() ? "DISABLE SD-MSC MODE?" : "ENABLE SD-MSC MODE?";
         break;
     case SETTINGS_ACTION_SHIP:
-        title = "SHIP MODE";
-        body = "POWER DOWN FOR SHIPPING?";
+        title = "SHUTDOWN";
+        body = "SHUT DOWN NOW?";
         break;
     case SETTINGS_ACTION_DEEP_SLEEP:
         title = "DEEP SLEEP";
@@ -1535,13 +1535,11 @@ static void settings_page_create(Page *page)
                     NULL, CYBER_YELLOW);
     settings_button(system_options, "DISPLAY BRIGHTNESS", 6, 64, 628, 52,
                     settings_brightness_open_cb, NULL, CYBER_YELLOW);
-    settings_button(system_options, "SHIP MODE", 6, 124, 628, 52, settings_system_cb,
+    settings_button(system_options, "SHUTDOWN", 6, 124, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_SHIP, CYBER_YELLOW);
-    settings_button(system_options, "DEEP SLEEP", 6, 184, 628, 52, settings_system_cb,
-                    (void *)(uintptr_t)SETTINGS_ACTION_DEEP_SLEEP, CYBER_YELLOW);
-    settings_button(system_options, "LIGHT SLEEP", 6, 244, 628, 52, settings_system_cb,
+    settings_button(system_options, "LIGHT SLEEP", 6, 184, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_LIGHT_SLEEP, CYBER_YELLOW);
-    settings_button(system_options, "CHECK", 6, 304, 628, 52, settings_system_cb,
+    settings_button(system_options, "CHECK", 6, 244, 628, 52, settings_system_cb,
                     (void *)(uintptr_t)SETTINGS_ACTION_CHECK, CYBER_YELLOW);
 
     lv_obj_t *footer_fw = page_ui_label(page->root,
