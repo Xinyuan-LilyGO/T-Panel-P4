@@ -89,13 +89,18 @@ set_property(CACHE T_PANEL_P4_EXAMPLE PROPERTY STRINGS
     xl9555
     camera
     audio/loopback
+    audio/aec
     audio/play_wav
     audio/play_sd_mp3
+    sensor/qmi8658c
+    sensor/qmc6309
+    motor
     lcd_touch
     lr2021
     lvgl_fps_test
     lvgl_lcd_touch
     rect_lowpower_test
+    deep_sleep_baseline
     sd
     sdio_esp32c5
     usb_msc)
@@ -146,7 +151,7 @@ endif()
 # Shared examples such as axp517 and lcd_touch work on all profiles.
 set(_standard_only factory_standard)
 set(_round_only factory_round)
-set(_rect_only rect_lowpower_test)
+set(_rect_only rect_lowpower_test audio/aec sensor/qmi8658c sensor/qmc6309 motor)
 foreach(_profile IN LISTS _supported_hardware_versions)
     if(T_PANEL_P4_EXAMPLE IN_LIST _${_profile}_only AND
        NOT T_PANEL_P4_HARDWARE_VERSION STREQUAL _profile)

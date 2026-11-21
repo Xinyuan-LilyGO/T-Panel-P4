@@ -26,13 +26,20 @@
   // "tPanelP4.example": "sdio_esp32c5",
   // "tPanelP4.example": "usb_msc",
   // "tPanelP4.example": "xl9555",
-  "tPanelP4.example": "factory_standard",
+  "tPanelP4.example": "deep_sleep_baseline",
+  // "tPanelP4.example": "factory_standard",
   // "tPanelP4.example": "factory_round",
   // "tPanelP4.example": "factory_rect",
 
+   // Rect Board only
+  // "tPanelP4.example": "audio/aec",  
+  // "tPanelP4.example": "sensor/qmc6309",  
+  // "tPanelP4.example": "sensor/qmi8658c",  
+  // "tPanelP4.example": "motor",  
+
+
   "tPanelP4.buildDirectory": "${config:tPanelP4.hardwareVersion}-${config:tPanelP4.example}",
   "idf.buildPath": "${workspaceFolder}/build/${config:tPanelP4.buildDirectory}",
-  "idf.buildPathWin": "${workspaceFolder}\\build\\${config:tPanelP4.buildDirectory}",
   "idf.cmakeCompilerArgs": [
     "-G",
     "Ninja",
@@ -41,5 +48,9 @@
     "-DT_PANEL_P4_HARDWARE_VERSION=${config:tPanelP4.hardwareVersion}",
     "-DT_PANEL_P4_EXAMPLE=${config:tPanelP4.example}"
   ],
-  "idf.portWin": "COM232",
+  "idf.toolsPathWin": "D:\\Software\\ESP-IDF_5.5.3\\Espressif",
+  "idf.pythonInstallPath": "D:\\Software\\ESP-IDF_5.5.3\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.flashType": "UART",
+  "idf.port": "COM231",
+  "idf.currentSetup": "D:/Software/ESP-IDF_5.5.3/Espressif/frameworks/esp-idf-v5.5.3/",
 }

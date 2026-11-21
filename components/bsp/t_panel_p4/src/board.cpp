@@ -39,6 +39,21 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 #endif
         };
 
+#if CONFIG_ESP_CONSOLE_UART
+#if CONFIG_ESP_CONSOLE_UART_CUSTOM
+        constexpr gpio_num_t kConsolePins[]{
+            static_cast<gpio_num_t>(CONFIG_ESP_CONSOLE_UART_TX_GPIO >= 0
+                                        ? CONFIG_ESP_CONSOLE_UART_TX_GPIO
+                                        : U0TXD_GPIO_NUM),
+            static_cast<gpio_num_t>(CONFIG_ESP_CONSOLE_UART_RX_GPIO >= 0
+                                        ? CONFIG_ESP_CONSOLE_UART_RX_GPIO
+                                        : U0RXD_GPIO_NUM)};
+#else
+        constexpr gpio_num_t kConsolePins[]{
+            static_cast<gpio_num_t>(U0TXD_GPIO_NUM), static_cast<gpio_num_t>(U0RXD_GPIO_NUM)};
+#endif
+#endif
+
         void releaseDeepSleepGpioHolds()
         {
             for (const gpio_num_t pin : kDeepSleepHeldOutputs)
@@ -51,18 +66,34 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             }
         }
 
-        esp_err_t holdDeepSleepOutputsLow()
+        esp_err_t holdDeepSleepOutputsLow(gpio_num_t wakeup_gpio)
         {
             for (const gpio_num_t pin : kDeepSleepHeldOutputs)
             {
+                if (pin == wakeup_gpio)
+                    continue;
+#if CONFIG_ESP_CONSOLE_UART
+                // Preserve final logs even when a custom console shares a pad
+                // from this list. Console pads use sleep isolation below.
+                if (pin == kConsolePins[0] || pin == kConsolePins[1])
+                    continue;
+#endif
                 ESP_RETURN_ON_ERROR(gpio_set_level(pin, 0), kTag,
                                     "preload deep-sleep GPIO%d low failed", static_cast<int>(pin));
                 ESP_RETURN_ON_ERROR(gpio_set_direction(pin, GPIO_MODE_OUTPUT), kTag,
                                     "configure deep-sleep GPIO%d output failed", static_cast<int>(pin));
+                ESP_RETURN_ON_ERROR(gpio_set_pull_mode(pin, GPIO_FLOATING), kTag,
+                                    "disable deep-sleep GPIO%d pulls failed", static_cast<int>(pin));
+                ESP_RETURN_ON_ERROR(gpio_sleep_sel_dis(pin), kTag,
+                                    "disable GPIO%d sleep switching failed", static_cast<int>(pin));
+                // Replace a hold left by an earlier sleep/failed sleep attempt.
+                ESP_RETURN_ON_ERROR(gpio_hold_dis(pin), kTag,
+                                    "release deep-sleep GPIO%d hold failed", static_cast<int>(pin));
                 ESP_RETURN_ON_ERROR(gpio_set_level(pin, 0), kTag, "drive deep-sleep GPIO%d low failed",
                                     static_cast<int>(pin));
                 ESP_RETURN_ON_ERROR(gpio_hold_en(pin), kTag, "hold deep-sleep GPIO%d low failed",
                                     static_cast<int>(pin));
+                ESP_LOGI(kTag, "Deep-sleep output: GPIO%d held low", static_cast<int>(pin));
             }
             return ESP_OK;
         }
@@ -70,19 +101,9 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         esp_err_t configureDeepSleepConsoleIsolation()
         {
 #if CONFIG_ESP_CONSOLE_UART
-#if CONFIG_ESP_CONSOLE_UART_CUSTOM
-            constexpr gpio_num_t console_pins[]{
-                static_cast<gpio_num_t>(CONFIG_ESP_CONSOLE_UART_TX_GPIO >= 0
-                    ? CONFIG_ESP_CONSOLE_UART_TX_GPIO : U0TXD_GPIO_NUM),
-                static_cast<gpio_num_t>(CONFIG_ESP_CONSOLE_UART_RX_GPIO >= 0
-                    ? CONFIG_ESP_CONSOLE_UART_RX_GPIO : U0RXD_GPIO_NUM)};
-#else
-            constexpr gpio_num_t console_pins[]{
-                static_cast<gpio_num_t>(U0TXD_GPIO_NUM), static_cast<gpio_num_t>(U0RXD_GPIO_NUM)};
-#endif
             // ESP-IDF excludes the console pins from automatic sleep isolation.
             // Use sleep configuration only, so the final UART logs still work.
-            for (const gpio_num_t pin : console_pins)
+            for (const gpio_num_t pin : kConsolePins)
             {
                 ESP_RETURN_ON_ERROR(gpio_sleep_set_direction(pin, GPIO_MODE_DISABLE), kTag,
                                     "disable sleeping console GPIO failed");
@@ -92,7 +113,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
                                     "enable console sleep configuration failed");
             }
             ESP_LOGI(kTag, "Deep-sleep UART isolation: TX=%d RX=%d, input/output/pulls disabled in sleep",
-                     static_cast<int>(console_pins[0]), static_cast<int>(console_pins[1]));
+                     static_cast<int>(kConsolePins[0]), static_cast<int>(kConsolePins[1]));
 #endif
             return ESP_OK;
         }
@@ -388,6 +409,10 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             {"Camera", isCameraInitialized(), &Board::initializeCamera, &Board::deinitializeCamera},
 #if !T_PANEL_P4_BSP_IS_RECT
             {"Lora", isLoraInitialized(), &Board::initializeLora, &Board::deinitializeLora},
+#else
+            {"QMI8658C", isQmi8658cInitialized(), &Board::initializeQmi8658c, &Board::deinitializeQmi8658c},
+            {"QMC6309", isQmc6309Initialized(), &Board::initializeQmc6309, &Board::deinitializeQmc6309},
+            {"Motor", isMotorInitialized(), &Board::initializeMotor, &Board::deinitializeMotor},
 #endif
             {"SdCard", isSdCardInitialized(), &Board::initializeSdCard, &Board::deinitializeSdCard},
         };
@@ -419,84 +444,24 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 
     esp_err_t Board::deinitialize()
     {
-        ESP_RETURN_ON_ERROR(prepareForPowerDown(), kTag, "prepare board power-down failed");
-#if !T_PANEL_P4_BSP_IS_RECT
-        // Disable the shared rail before releasing the expander and I2C transport.
-        if (isIoExpanderInitialized())
-        {
-            ESP_RETURN_ON_ERROR(setC5AudioLcdEnabled(false), kTag,
-                                "disable C5/audio/LCD power failed");
-        }
-        if (spi_bus_.isInitialized())
-        {
-            ESP_RETURN_ON_ERROR(detail::toEspError(spi_bus_.deinitialize()), kTag,
-                                "deinitialize SPI bus failed");
-        }
-        if (isIoExpanderInitialized())
-        {
-            // Read hardware, not the driver's cached latches/modes, before
-            // releasing the last way to verify the power-enable outputs.
-            const auto read_register_pair = [&](std::uint8_t reg, std::uint16_t &value)
-            {
-                std::uint8_t bytes[2]{};
-                const esp_err_t error = detail::toEspError(xl9555_transport_->writeRead(
-                    &reg, sizeof(reg), bytes, sizeof(bytes), 100));
-                if (error == ESP_OK)
-                    value = static_cast<std::uint16_t>(bytes[0]) |
-                            (static_cast<std::uint16_t>(bytes[1]) << 8U);
-                return error;
-            };
-            std::uint16_t outputs{}, modes{}, levels{};
-            ESP_RETURN_ON_ERROR(read_register_pair(0x02, outputs), kTag,
-                                "read XL9555 output latches before shutdown failed");
-            ESP_RETURN_ON_ERROR(read_register_pair(0x06, modes), kTag,
-                                "read XL9555 pin modes before shutdown failed");
-            ESP_RETURN_ON_ERROR(detail::toEspError(xl9555_->readInputs(levels)), kTag,
-                                "read XL9555 pin levels before shutdown failed");
-            levels ^= xl9555_->polarityInversionMask();
-            ESP_LOGI(kTag, "XL9555 shutdown readback: OUT=0x%04X CFG=0x%04X LEVEL=0x%04X",
-                     static_cast<unsigned>(outputs), static_cast<unsigned>(modes),
-                     static_cast<unsigned>(levels));
-            ESP_RETURN_ON_FALSE(outputs == 0U && modes == 0U && levels == 0U,
-                                ESP_ERR_INVALID_STATE, kTag,
-                                "XL9555 shutdown requires all 16 pins driven low");
-            ESP_RETURN_ON_ERROR(detail::toEspError(xl9555_->deinitialize()), kTag,
-                                "deinitialize XL9555 failed");
-        }
-        xl9555_.reset();
-        xl9555_transport_.reset();
-#endif
-        ESP_RETURN_ON_ERROR(deinitializeBacklight(), kTag, "deinitialize backlight failed");
-        // AXP517 still owns an I2C device and an interrupt worker. Release
-        // both before deleting their shared bus.
-        ESP_RETURN_ON_ERROR(deinitializePower(), kTag, "deinitialize power controller failed");
-        if (i2c_bus_.isInitialized())
-        {
-            ESP_RETURN_ON_ERROR(detail::toEspError(i2c_bus_.deinitialize()), kTag,
-                                "deinitialize I2C bus failed");
-        }
-        return ESP_OK;
-    }
-
-    esp_err_t Board::prepareForPowerDown()
-    {
         ESP_RETURN_ON_ERROR(deinitializeUsbMsc(), kTag, "deinitialize USB MSC failed");
-        ESP_RETURN_ON_FALSE(!isUsbMscInitialized(), ESP_ERR_INVALID_STATE, kTag, "USB MSC is still initialized");
         ESP_RETURN_ON_ERROR(deinitializeSdCard(), kTag, "deinitialize SD card failed");
         ESP_RETURN_ON_ERROR(deinitializeCamera(), kTag, "deinitialize camera failed");
         ESP_RETURN_ON_ERROR(deinitializeDisplay(), kTag, "deinitialize display failed");
         ESP_RETURN_ON_ERROR(deinitializeTouch(), kTag, "deinitialize touch failed");
         ESP_RETURN_ON_ERROR(deinitializeAudio(), kTag, "deinitialize audio failed");
-#if !T_PANEL_P4_BSP_IS_RECT
+#if T_PANEL_P4_BSP_IS_STANDARD || T_PANEL_P4_BSP_IS_ROUND
         ESP_RETURN_ON_ERROR(deinitializeLora(), kTag, "deinitialize LoRa failed");
         if (isIoExpanderInitialized())
         {
-            ESP_RETURN_ON_ERROR(detail::toEspError(xl9555_->writeOutputs(0)), kTag,
-                                "clear XL9555 outputs failed");
-            ESP_RETURN_ON_ERROR(
-                detail::toEspError(xl9555_->setAllPinModes(pdl::expand_io::Xl9555PinMode::output)),
-                kTag, "configure XL9555 outputs failed");
+            setSpeakerEnabled(false, true);
+            setSdPowerEnabled(false, true);
+            setLoraPowerEnabled(false, true);
+            setC5AudioLcdEnabled(false, true);
         }
+#elif T_PANEL_P4_BSP_IS_RECT
+        ESP_RETURN_ON_ERROR(deinitializeMotor(), kTag, "deinitialize motor failed");
+        ESP_RETURN_ON_ERROR(deinitializeSensors(), kTag, "deinitialize sensors failed");
 #endif
         return ESP_OK;
     }
@@ -506,8 +471,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         ESP_RETURN_ON_FALSE(isPowerInitialized(), ESP_ERR_INVALID_STATE, kTag, "ship mode requires initialized power controller");
         ESP_RETURN_ON_FALSE(timeout_ms != 0U, ESP_ERR_INVALID_ARG, kTag, "ship-mode timeout must be nonzero");
         ESP_LOGI(kTag, "Entering AXP517 ship mode");
-        ESP_RETURN_ON_ERROR(detail::toEspError(axp517_->enterShipMode(timeout_ms)), kTag,
-                            "AXP517 enter ship mode failed");
+        ESP_RETURN_ON_ERROR(detail::toEspError(axp517_->enterShipMode(timeout_ms)), kTag, "AXP517 enter ship mode failed");
         return ESP_OK;
     }
 
@@ -590,20 +554,18 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
     {
         ESP_RETURN_ON_FALSE(isPowerInitialized(), ESP_ERR_INVALID_STATE, kTag,
                             "deep sleep requires initialized power controller");
-        ESP_RETURN_ON_ERROR(configureDeepSleepWakeup(config), kTag,
-                            "configure deep-sleep wakeup failed");
+        ESP_RETURN_ON_ERROR(configureDeepSleepWakeup(config), kTag, "configure deep-sleep wakeup failed");
         if (config.wakeup_gpio == GPIO_NUM_NC && config.timer_wakeup_us == 0U)
             ESP_LOGW(kTag, "Deep sleep has no wakeup source; reset or power cycle is required");
 
         esp_err_t error = deinitialize();
         if (error != ESP_OK)
         {
-            ESP_LOGE(kTag, "deinitialize board before deep sleep failed: %s",
-                     esp_err_to_name(error));
+            ESP_LOGE(kTag, "deinitialize board before deep sleep failed: %s", esp_err_to_name(error));
             disableDeepSleepWakeup(config);
             return error;
         }
-        error = holdDeepSleepOutputsLow();
+        error = holdDeepSleepOutputsLow(config.wakeup_gpio);
         if (error != ESP_OK)
         {
             ESP_LOGE(kTag, "hold deep-sleep outputs low failed: %s", esp_err_to_name(error));
@@ -694,6 +656,8 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
                isAudioInitialized() && isCameraInitialized() &&
 #if !T_PANEL_P4_BSP_IS_RECT
                isLoraInitialized() &&
+#else
+               isSensorsInitialized() && isMotorInitialized() &&
 #endif
                isSdCardInitialized();
     }
@@ -818,6 +782,11 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         Devices result{};
         result.i2c_bus = i2cBus();
         result.axp517 = isPowerInitialized() ? &*axp517_ : nullptr;
+#if T_PANEL_P4_BSP_IS_RECT
+        result.qmi8658c = qmi8658c();
+        result.qmc6309 = qmc6309();
+        result.drv2605 = drv2605();
+#endif
 #if !T_PANEL_P4_BSP_IS_RECT
         result.spi_bus = spiBus();
         result.xl9555 = ioExpander();
@@ -842,12 +811,12 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         return i2c_bus_.isInitialized() ? &i2c_bus_ : nullptr;
     }
 
-#if !T_PANEL_P4_BSP_IS_RECT
     pdl::esp_idf::SpiBus *Board::spiBus() noexcept
     {
         return spi_bus_.isInitialized() ? &spi_bus_ : nullptr;
     }
 
+#if !T_PANEL_P4_BSP_IS_RECT
     pdl::expand_io::Xl9555 *Board::ioExpander() noexcept
     {
         return isIoExpanderInitialized() ? &*xl9555_ : nullptr;

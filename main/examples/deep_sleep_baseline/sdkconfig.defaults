@@ -1,0 +1,16 @@
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Chip revision follows the selected BSP profile (Rect includes older P4 chips).
+# Keep the BSP PSRAM boot/power configuration so IDF shuts down its LDO.
+# No application buffers, DMA, UI or other peripheral drivers are initialized.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+CONFIG_SPIRAM_BOOT_INIT=y
+# Match the BSP Flash/PSRAM wiring and keep IDF's late sleep power-down active.
+CONFIG_ESP_LDO_RESERVE_SPI_NOR_FLASH=y
+CONFIG_ESP_LDO_CHAN_SPI_NOR_FLASH_DOMAIN=1
+CONFIG_ESP_LDO_RESERVE_PSRAM=y
+CONFIG_ESP_LDO_CHAN_PSRAM_DOMAIN=2
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=n

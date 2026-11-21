@@ -38,16 +38,19 @@ namespace
 
     esp_err_t verifyPowerDownRegisters(pdl::I2cDevice &transport)
     {
-        struct Check { std::uint8_t address; std::uint8_t clear_mask; };
+        struct Check
+        {
+            std::uint8_t address;
+            std::uint8_t clear_mask;
+        };
         // MOD_EN0, COMMON_CFG, MOD_EN1, battery detection and ADC enable.
         // Keep charger/Buck policy; their enable bits do not imply conversion.
-        constexpr Check checks[]{{0x0B, 0x1C}, {0x10, 0x40}, {0x19, 0x34},
-                                 {0x68, 0x01}, {0x90, 0xFF}};
+        constexpr Check checks[]{{0x0B, 0x1C}, {0x10, 0x40}, {0x19, 0x34}, {0x68, 0x01}, {0x90, 0xFF}};
         for (const auto &check : checks)
         {
             std::uint8_t value{};
             ESP_RETURN_ON_ERROR(pdlError(transport.writeRead(&check.address, 1, &value, 1, 100),
-                                          "read AXP517 shutdown register"),
+                                         "read AXP517 shutdown register"),
                                 kTag, "PMIC shutdown readback failed");
             ESP_LOGI(kTag, "AXP517 shutdown readback: REG%02X=0x%02X clear-mask=0x%02X",
                      static_cast<unsigned>(check.address), static_cast<unsigned>(value),
@@ -80,94 +83,66 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 
         esp_err_t error = pdlError(axp517_->initialize(), "initialize AXP517");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setInputVoltageLimitMv(config.input_voltage_limit_mv),
-                             "configure AXP517 input voltage limit");
+            error = pdlError(axp517_->setInputVoltageLimitMv(config.input_voltage_limit_mv), "configure AXP517 input voltage limit");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setInputCurrentLimitMa(config.input_current_limit_ma),
-                             "configure AXP517 input current limit");
+            error = pdlError(axp517_->setInputCurrentLimitMa(config.input_current_limit_ma), "configure AXP517 input current limit");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setMinimumSystemVoltageMv(config.minimum_system_voltage_mv),
-                             "configure AXP517 minimum system voltage");
+            error = pdlError(axp517_->setMinimumSystemVoltageMv(config.minimum_system_voltage_mv), "configure AXP517 minimum system voltage");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeVoltageMv(config.charge_voltage_mv),
-                             "configure AXP517 charge voltage");
+            error = pdlError(axp517_->setChargeVoltageMv(config.charge_voltage_mv), "configure AXP517 charge voltage");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeCurrentMa(config.charge_current_ma),
-                             "configure AXP517 charge current");
+            error = pdlError(axp517_->setChargeCurrentMa(config.charge_current_ma), "configure AXP517 charge current");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setPrechargeCurrentMa(config.precharge_current_ma),
-                             "configure AXP517 precharge current");
+            error = pdlError(axp517_->setPrechargeCurrentMa(config.precharge_current_ma), "configure AXP517 precharge current");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setTrickleCurrentMa(config.trickle_current_ma),
-                             "configure AXP517 trickle current");
+            error = pdlError(axp517_->setTrickleCurrentMa(config.trickle_current_ma), "configure AXP517 trickle current");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setTerminationCurrentMa(config.termination_current_ma),
-                             "configure AXP517 termination current");
+            error = pdlError(axp517_->setTerminationCurrentMa(config.termination_current_ma), "configure AXP517 termination current");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeTerminationEnabled(config.enable_charge_termination),
-                             "configure AXP517 charge termination");
+            error = pdlError(axp517_->setChargeTerminationEnabled(config.enable_charge_termination), "configure AXP517 charge termination");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setBoostEnabled(false),
-                             "disable AXP517 boost");
+            error = pdlError(axp517_->setBoostEnabled(false), "disable AXP517 boost");
         if (error == ESP_OK)
-            error = pdlError(axp517_->configureDischarge(true, true, true, 3U),
-                             "configure AXP517 discharge");
+            error = pdlError(axp517_->configureDischargePaths(false, false, false, 3U), "configure AXP517 discharge paths");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeLedOutputType(config.charge_led_output_type),
-                             "configure AXP517 CHGLED output type");
+            error = pdlError(axp517_->setChargeLedOutputType(config.charge_led_output_type), "configure AXP517 CHGLED output type");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeLedCfgState(config.charge_led_cfg_state),
-                             "configure AXP517 CHGLED CFG state");
+            error = pdlError(axp517_->setChargeLedCfgState(config.charge_led_cfg_state), "configure AXP517 CHGLED CFG state");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeLedMode(config.charge_led_mode),
-                             "configure AXP517 CHGLED mode");
+            error = pdlError(axp517_->setChargeLedMode(config.charge_led_mode), "configure AXP517 CHGLED mode");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargeLedEnabled(config.enable_charge_led),
-                             "configure AXP517 CHGLED enabled");
+            error = pdlError(axp517_->setChargeLedEnabled(config.enable_charge_led), "configure AXP517 CHGLED enabled");
         if (error == ESP_OK)
         {
             pdl::charge::Axp517ChargeLedConfig led{};
             error = pdlError(axp517_->readChargeLedConfig(led), "read AXP517 CHGLED configuration");
-            if (error == ESP_OK &&
-                (led.enabled != config.enable_charge_led ||
-                 led.output_type != config.charge_led_output_type ||
-                 led.mode != config.charge_led_mode || led.cfg_state != config.charge_led_cfg_state))
+            if (error == ESP_OK && (led.enabled != config.enable_charge_led || led.output_type != config.charge_led_output_type ||
+                                    led.mode != config.charge_led_mode || led.cfg_state != config.charge_led_cfg_state))
             {
                 ESP_LOGE(kTag, "AXP517 CHGLED configuration readback mismatch");
                 error = ESP_ERR_INVALID_STATE;
             }
         }
         if (error == ESP_OK)
-            error = pdlError(axp517_->setAdcChannels(config.enable_adc ? pdl::charge::Axp517::adcAll : 0U),
-                             "configure AXP517 ADC");
+            error = pdlError(axp517_->setAdcChannels(config.enable_adc ? pdl::charge::Axp517::adcAll : 0U), "configure AXP517 ADC");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setFuelGaugeLowFrequency(false),
-                             "disable AXP517 low-frequency fuel gauge");
+            error = pdlError(axp517_->setFuelGaugeLowFrequency(false), "disable AXP517 low-frequency fuel gauge");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setFuelGaugeEnabled(config.enable_fuel_gauge),
-                             "configure AXP517 fuel gauge");
+            error = pdlError(axp517_->setFuelGaugeEnabled(config.enable_fuel_gauge), "configure AXP517 fuel gauge");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setBatteryDetectionEnabled(config.enable_battery_detection),
-                             "configure AXP517 battery detection");
+            error = pdlError(axp517_->setBatteryDetectionEnabled(config.enable_battery_detection), "configure AXP517 battery detection");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setBuckEnabled(true),
-                             "enable AXP517 buck");
+            error = pdlError(axp517_->setBuckEnabled(true), "enable AXP517 buck");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setChargerEnabled(config.enable_charger),
-                             "configure AXP517 charger");
+            error = pdlError(axp517_->setChargerEnabled(config.enable_charger), "configure AXP517 charger");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setBc12DetectionEnabled(config.enable_bc12_detection),
-                             "configure AXP517 BC1.2 detection");
+            error = pdlError(axp517_->setBc12DetectionEnabled(config.enable_bc12_detection), "configure AXP517 BC1.2 detection");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setTypeCDetectionEnabled(config.enable_type_c_detection),
-                             "configure AXP517 Type-C detection");
+            error = pdlError(axp517_->setTypeCDetectionEnabled(config.enable_type_c_detection), "configure AXP517 Type-C detection");
         if (error == ESP_OK)
-            error = pdlError(axp517_->setInterruptsEnabled(0U),
-                             "disable AXP517 interrupts");
+            error = pdlError(axp517_->setInterruptsEnabled(0U), "disable AXP517 interrupts");
         if (error == ESP_OK)
-            error = pdlError(axp517_->clearInterrupts(),
-                             "clear AXP517 interrupts");
-
+            error = pdlError(axp517_->clearInterrupts(), "clear AXP517 interrupts");
         if (error == ESP_OK)
         {
             power_interrupt_mutex_ = xSemaphoreCreateMutex();
@@ -206,35 +181,18 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 
         if (axp517_ && axp517_->isInitialized())
         {
-            preserveFirstError(
-                pdlError(axp517_->setInterruptsEnabled(0U), "disable AXP517 interrupts"),
-                first_error);
-            preserveFirstError(pdlError(axp517_->setChargeLedEnabled(false),
-                                        "disable AXP517 charge LED"), first_error);
-            preserveFirstError(pdlError(axp517_->setBoostEnabled(false),
-                                        "disable AXP517 boost"), first_error);
-            preserveFirstError(pdlError(axp517_->configureDischarge(false, true, true, 3U),
-                                        "disable forced VBUS discharge"), first_error);
-            // Releasing the transport does not clear PMIC registers. Disable
-            // measurement and detection blocks explicitly for every board.
-            preserveFirstError(pdlError(axp517_->setAdcChannels(0U), "disable AXP517 ADC"),
-                               first_error);
-            preserveFirstError(pdlError(axp517_->setFuelGaugeLowFrequency(false),
-                                        "disable AXP517 low-frequency fuel gauge"),
-                               first_error);
-            preserveFirstError(
-                pdlError(axp517_->setFuelGaugeEnabled(false), "disable AXP517 fuel gauge"),
-                first_error);
-            preserveFirstError(pdlError(axp517_->setBatteryDetectionEnabled(false),
-                                        "disable AXP517 battery detection"),
-                               first_error);
-            preserveFirstError(pdlError(axp517_->setBc12DetectionEnabled(false),
-                                        "disable AXP517 BC1.2 detection"), first_error);
-            preserveFirstError(pdlError(axp517_->setTypeCDetectionEnabled(false),
-                                        "disable AXP517 Type-C detection"), first_error);
+            preserveFirstError(pdlError(axp517_->setInterruptsEnabled(0U), "disable AXP517 interrupts"), first_error);
+            preserveFirstError(pdlError(axp517_->setChargeLedEnabled(false), "disable AXP517 charge LED"), first_error);
+            preserveFirstError(pdlError(axp517_->setBoostEnabled(false), "disable AXP517 boost"), first_error);
+            preserveFirstError(pdlError(axp517_->configureDischargePaths(false, false, false, 3U), "disable AXP517 discharge paths"), first_error);
+            preserveFirstError(pdlError(axp517_->setAdcChannels(0U), "disable AXP517 ADC"), first_error);
+            preserveFirstError(pdlError(axp517_->setFuelGaugeLowFrequency(false), "disable AXP517 low-frequency fuel gauge"), first_error);
+            preserveFirstError(pdlError(axp517_->setFuelGaugeEnabled(false), "disable AXP517 fuel gauge"), first_error);
+            preserveFirstError(pdlError(axp517_->setBatteryDetectionEnabled(false), "disable AXP517 battery detection"), first_error);
+            preserveFirstError(pdlError(axp517_->setBc12DetectionEnabled(false), "disable AXP517 BC1.2 detection"), first_error);
+            preserveFirstError(pdlError(axp517_->setTypeCDetectionEnabled(false), "disable AXP517 Type-C detection"), first_error);
             preserveFirstError(verifyPowerDownRegisters(*axp517_transport_), first_error);
-            preserveFirstError(pdlError(axp517_->deinitialize(), "deinitialize AXP517"),
-                               first_error);
+            preserveFirstError(pdlError(axp517_->deinitialize(), "deinitialize AXP517"), first_error);
         }
         axp517_.reset();
         axp517_transport_.reset();
@@ -293,7 +251,8 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             error = toEspError(power_interrupt_.disable());
         // Always try to mask the chip, even if GPIO masking failed.
         preserveFirstError(pdlError(axp517_->setInterruptsEnabled(0U),
-                                    "disable AXP517 interrupts"), error);
+                                    "disable AXP517 interrupts"),
+                           error);
 
         if (enabled && error == ESP_OK)
         {

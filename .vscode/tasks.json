@@ -114,6 +114,7 @@
         "lr2021",
         "sd",
         "camera",
+        "deep_sleep_baseline",
         "rect_lowpower_test",
         "sdio_esp32c5",
         "usb_msc",
