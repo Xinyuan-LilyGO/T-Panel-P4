@@ -39,14 +39,25 @@ Standard、Round 和 Rect 都使用 ESP-IDF 组件 `t_panel_p4`。在工程根�
 ```cpp
 #include <bsp/api/board.hpp>
 
-void app()
+static bsp::Board board;
+
+void app_main()
 {
-    static bsp::Board board;
-    ESP_ERROR_CHECK(board.initializePower());  // 初始化 AXP517 及所需的板级资源
-    if (auto *axp517 = board.devices().axp517)
+    // 需要无 SD 卡启动时传入 false；否则可直接调用 initialize()。
+    ESP_ERROR_CHECK(board.initialize(false));
+
+    // 设备句柄和控制器指针均由 Board 借用，释放或重新初始化后应重新获取。
+    if (auto *touch = board.touchController())
     {
-        // 通过 axp517 操作已初始化的驱动。
+        bsp::TouchData report{};
+        if (pdl::isOk(touch->readTouchData(report)) && report.finger_count != 0)
+        {
+            const auto &point = report.points[0];
+            // 使用 point.x、point.y、point.strength。
+        }
     }
+
+    ESP_ERROR_CHECK(board.deinitialize());
 }
 ```
 
@@ -70,40 +81,9 @@ Standard / Round BSP 内置 `bsp::Esp32c5Slave`，实现 ESP-Hosted SDIO
 `firmware/slave-c5/esp32c5_slave_2.12.13.bin`，版本为 **ESP-Hosted 2.12.13**。
 P4 主机 BSP 同样固定使用 `espressif/esp_hosted` 2.12.13 和
 `espressif/esp_wifi_remote` 1.6.4。C5 固件至少应与主机保持相同的 ESP-Hosted
-大版本；如果需要强制主机和从机版本完全一致，可设置：
-
-```cpp
-bsp::Esp32c5Config config{};
-config.require_exact_hosted_version = true;
-
-bsp::Board board;
-ESP_ERROR_CHECK(board.initializePower());
-bsp::Esp32c5Slave c5;
-ESP_ERROR_CHECK(c5.initialize(config));
-```
-
-基本生命周期如下：
-
-```cpp
-bsp::Board board;
-ESP_ERROR_CHECK(board.initializePower());
-
-bsp::Esp32c5Config config{};
-config.expected_sdio.clock_gpio = bsp::pins::sd2Clock;
-config.expected_sdio.command_gpio = bsp::pins::sd2Command;
-config.expected_sdio.data0_gpio = bsp::pins::sd2Data0;
-config.expected_sdio.data1_gpio = bsp::pins::sd2Data1;
-config.expected_sdio.data2_gpio = bsp::pins::sd2Data2;
-config.expected_sdio.data3_gpio = bsp::pins::sd2Data3;
-config.expected_sdio.enable_gpio = bsp::pins::esp32c5Enable;
-
-bsp::Esp32c5Slave c5;
-ESP_ERROR_CHECK(c5.initialize(config));
-// c5.startWifiStation(...);
-
-ESP_ERROR_CHECK(c5.deinitialize());
-ESP_ERROR_CHECK(board.deinitialize());
-```
+大版本；如需强制主机和从机版本完全一致，可将
+`Esp32c5Config::require_exact_hosted_version` 设为 `true`。使用从机 API 前先
+调用 `board.initializePower()`，完成从机初始化后再按生命周期顺序反初始化。
 
 `Esp32c5Slave` 仅在 Standard / Round 构建；Rect 没有该从机和对应 API。
 
@@ -125,32 +105,6 @@ Rect 的整板 `initialize()` / `isInitialized()` 包含这两个传感器。
 | I2C 速率 / 超时 | 两者均为 400 kHz / 100 ms；支持 1～400000 Hz、1～INT_MAX ms；超时为单次传输参数，初始化含复位等待和多次传输 |
 | QMI8658C 测量 | 加速度 ±4 g、角速度 ±512 °/s，两者均为 125 Hz |
 | QMC6309 测量 | 连续测量、±8 gauss、50 Hz、8 倍过采样；可通过 `config.qmc6309.sensor` 修改 |
-
-```cpp
-#if T_PANEL_P4_BSP_IS_RECT
-// board 的生命周期应覆盖所有传感器操作。
-bsp::SensorConfig config{};
-config.qmi8658c.sensor.accelerometer_range = pdl::sensor::Qmi8658cAccelerometerRange::g_8;
-ESP_ERROR_CHECK(board.initializeSensors(config));
-
-// 在应用任务中周期轮询；尚无新数据时留待下次读取。
-pdl::sensor::Qmi8658cDataReady ready{};
-ESP_ERROR_CHECK(board.readQmi8658cDataReady(ready));
-if (ready.accelerometer && ready.gyroscope) {
-    pdl::sensor::Qmi8658cMeasurement imu{};
-    ESP_ERROR_CHECK(board.readQmi8658cMeasurement(imu));
-    // imu.acceleration_g、angular_rate_dps、temperature_c，以及原始值。
-}
-
-pdl::sensor::Qmc6309Status status{};
-ESP_ERROR_CHECK(board.readQmc6309Status(status));
-if (status.data_ready) {
-    pdl::sensor::Qmc6309Measurement magnetic{};
-    ESP_ERROR_CHECK(board.readQmc6309Measurement(magnetic));
-    // magnetic.x_gauss / y_gauss / z_gauss；使用前检查 magnetic.overflow。
-}
-#endif
-```
 
 读取接口返回 `esp_err_t`；未初始化时返回 `ESP_ERR_INVALID_STATE`。
 QMI 数据读取返回最新寄存器值，不等待 data-ready；QMC 无新数据时也返回
@@ -180,22 +134,6 @@ GPIO21 控制 EN。Standard / Round 不编译该文件，也不暴露马达接�
 `driver` 沿用 PDL 的 `Drv2605Config`：默认 ERM、库 1、额定 3.0 V、钳位 3.3 V、
 开环且不自动校准。配置应匹配连接的执行器；LRA 使用库 6，其电压寄存器计算
 不同于 ERM。BSP 不根据马达接口推断执行器型号。
-
-```cpp
-#include <bsp/api/board.hpp>
-
-#if T_PANEL_P4_BSP_IS_RECT
-static bsp::Board board;
-bsp::MotorConfig config{};
-ESP_ERROR_CHECK(board.initializeMotor(config));
-ESP_ERROR_CHECK(board.playMotorEffect(1)); // 非阻塞，效果 ID 为 1..117。
-
-bool playing{};
-ESP_ERROR_CHECK(board.readMotorPlaying(playing));
-ESP_ERROR_CHECK(board.stopMotor());
-ESP_ERROR_CHECK(board.deinitializeMotor());
-#endif
-```
 
 | API | 行为 |
 | --- | --- |
@@ -239,24 +177,6 @@ profile）要求输入、输出 RGB 格式一致，否则初始化返回 `ESP_ER
 RGB565 输入每像素占 2 字节，RGB888 占 3 字节；RGB666 按 ESP-IDF 的
 18 位打包格式存储。LVGL、PPA 和应用填充的数据格式须与输入格式一致。
 初始化表中的用户页 COLMOD 不会覆盖传入的面板位深。
-
-```cpp
-#include <bsp/api/board.hpp>
-
-bsp::Board board;
-bsp::DisplayConfig config{};
-// 默认 RGB888；应用若生成 RGB565 数据，显式选择：
-config.in_color_format = LCD_COLOR_FMT_RGB565;
-config.frame_buffer_count = 2;
-config.bits_per_pixel = 16; // 输入/输出一致；v3 及以上芯片也可选择 24 位输出。
-ESP_ERROR_CHECK(board.initializeDisplay(config));
-
-// 三种板型返回同一个 ESP-IDF 接口类型，无需判断具体面板芯片。
-esp_lcd_panel_handle_t panel = board.displayPanel();
-// esp_lcd_panel_draw_bitmap(panel, x1, y1, x2, y2, pixels);
-// esp_lcd_dpi_panel_register_event_callbacks(panel, &callbacks, context);
-auto active_config = board.displayConfig();
-```
 
 `displayPanel()` 与 `board.devices().display_panel` 返回同一借用句柄，
 未初始化时为 `nullptr`；释放、重新初始化或 light sleep 后须重新获取。
@@ -304,24 +224,6 @@ Rect 在复位后先探测 `0x41`。ILI9882 的 ICE 芯片 ID 查询属于可选
 失败时继续读取正常协议及固件版本；这两项必须成功才会返回初始化成功。
 面板信息和报文格式查询不发送 `0xF6` 前导命令，旧版固件使用对应的查询长度。
 
-```cpp
-#include <bsp/api/board.hpp>
-
-bsp::Board board;
-bsp::TouchConfig config{};
-config.i2c_frequency_hz = 100000;  // 根据实际接线设置；地址默认匹配当前板型。
-// 如需中断通知，在初始化前设置 config.interrupt_handler / interrupt_argument。
-ESP_ERROR_CHECK(board.initializeTouch(config));
-
-bsp::TouchController *touch = board.touchController();
-bsp::TouchData report{};
-const pdl::Status status = touch->readTouchData(report);
-if (pdl::isOk(status) && report.finger_count != 0) {
-    const auto &point = report.points[0];
-    // point.x / point.y / point.strength
-}
-```
-
 统一数据最多容纳 10 个触点，芯片实际最大触点数保持不变。`strength` 为
 16-bit，保留 GT911 完整压力值；`track_id` 在 GT911 上为芯片跟踪 ID，其他
 芯片使用本次报告的触点索引；`edge_touch` 仅 Jadard 提供，其余为 `false`。
@@ -357,31 +259,6 @@ Standard / Round 还会准备 XL9555 并开启 C5/audio/LCD 电源。
 不支持的目标电压或超范围配置会返回错误。
 重复调用初始化会复用已有控制器，保留原配置。应用新配置前先反初始化。
 
-```cpp
-#include <bsp/api/board.hpp>
-
-bsp::Board board;
-// 默认配置：ESP_ERROR_CHECK(board.initializePower());
-bsp::T_PANEL_P4_BSP_NAMESPACE::PowerConfig config{};
-config.charge_current_ma = 512;
-config.enable_interrupt = false;
-ESP_ERROR_CHECK(board.initializePower(config));
-
-// CHGLED：默认 Type A，充电亮、充满/未充电灭，故障按芯片规则闪烁。
-ESP_ERROR_CHECK(board.setChargeLedEnabled(true));
-ESP_ERROR_CHECK(board.setChargeLedOutputType(
-    pdl::charge::Axp517ChargeLedOutputType::open_drain));
-ESP_ERROR_CHECK(board.setChargeLedMode(pdl::charge::Axp517ChargeLedMode::type_a));
-pdl::charge::Axp517ChargeLedConfig led{};
-ESP_ERROR_CHECK(board.readChargeLedConfig(led));
-
-// 即使初始化时关闭，也可以在运行中开启中断。
-ESP_ERROR_CHECK(board.setPowerInterruptEnabled(true));
-bool irq_enabled = board.isPowerInterruptEnabled();
-ESP_ERROR_CHECK(board.setPowerInterruptEnabled(false));
-ESP_ERROR_CHECK(board.deinitializePower());
-```
-
 CHGLED 手动控制使用 `setChargeLedMode(Axp517ChargeLedMode::cfg)` 和
 `setChargeLedCfgState(...)`，可设置高阻、1 Hz/4 Hz 闪烁及驱动电平。
 `drive_high` 需要推挽输出。初始化会回读校验 CHGLED 配置。
@@ -406,20 +283,8 @@ Round 的缓冲区保护策略：保护应用尚未释放的帧，不发布已�
 采集的缓冲区，并在成功停流后清理待领取帧及帧通知。
 
 初始化时通过 `CameraConfig` 配置采集参数，三种板型均可通过
-`board.cameraConfig()` 读取当前配置：
-
-```cpp
-bsp::T_PANEL_P4_BSP_NAMESPACE::CameraConfig config{};
-config.mode = pdl::camera::Ov2710Mode::raw10_1920x1080_25fps;
-config.input_data_color_type = CAM_CTLR_COLOR_RAW10;  // Must match the sensor mode.
-config.output_data_color_type = CAM_CTLR_COLOR_RGB888;  // RGB565 (default) or RGB888.
-config.capture_buffer_count = 3;  // 支持 2～3 个，默认 3 个
-config.auto_exposure_target = 0x28;  // 按需调整；默认 0x30
-config.isp_clock_hz = 160'000'000;
-config.allow_non_dma_psram_fallback = true;
-ESP_ERROR_CHECK(board.initializeCamera(config));
-ESP_ERROR_CHECK(board.startCameraStreaming());
-```
+`board.cameraConfig()` 读取当前配置；调整已初始化的摄像头参数应先释放
+持有帧，再调用 `reconfigureCamera(config)`。
 
 默认模式为 1920×1080、25 FPS，RAW10 经 ISP 转换为 RGB565。
 `input_data_color_type` 必须匹配传感器模式；目前 OV2710 驱动仅提供 RAW10，
@@ -481,17 +346,6 @@ WAV 录音会保存三通道并写入对应文件头，录音块大小自动向�
 状态、开启功放并等待 10 ms。正常播放结束后，先停止其他 TX 写入者，再调用
 `drainAudio()`，最后关闭功放；取消或出错时先关闭功放。文件播放器自动管理
 这些步骤。
-
-```cpp
-bsp::Board board;
-bsp::T_PANEL_P4_BSP_NAMESPACE::AudioConfig config{};
-config.output_volume_db = -12.0F;
-ESP_ERROR_CHECK(board.initializeAudio(config));
-ESP_ERROR_CHECK(board.setAudioOutputEnabled(true));
-// board.writeAudio(...);
-ESP_ERROR_CHECK(board.drainAudio());
-ESP_ERROR_CHECK(board.setSpeakerEnabled(false));
-```
 
 `setAudioMuted()` 仅操作 ES8389 DAC，`setAudioCaptureMuted()` 操作实际输入
 芯片的 ADC 并验证回读，成功读取的静音 PCM 仍会被清零。三种板型统一使用
