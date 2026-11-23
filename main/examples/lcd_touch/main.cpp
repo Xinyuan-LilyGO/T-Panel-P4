@@ -2,7 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <esp_attr.h>
 #include <esp_err.h>
 #include <esp_lcd_panel_ops.h>

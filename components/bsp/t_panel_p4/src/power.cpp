@@ -1,4 +1,4 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #include <esp_attr.h>
 #include <esp_check.h>

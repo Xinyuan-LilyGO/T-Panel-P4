@@ -1,5 +1,8 @@
 #pragma once
 
+#include <bsp/hardware.hpp>
+#include <bsp/pins/pins.hpp>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -9,9 +12,13 @@
 #include <esp_netif.h>
 #include <esp_wifi.h>
 
-namespace connectivity
+#if T_PANEL_P4_BSP_IS_RECT
+#error "bsp/api/slave_c5.hpp is only available for Standard/Round T-Panel-P4 hardware"
+#endif
+
+namespace bsp
 {
-enum class Esp32c5ConnectivityState : std::uint8_t
+enum class Esp32c5State : std::uint8_t
 {
     uninitialized,
     starting,
@@ -45,16 +52,16 @@ struct Esp32c5SdioConfig
     std::uint16_t receive_queue_size{20};
     std::uint8_t slot{1};
     std::uint8_t bus_width{4};
-    int clock_gpio{18};
-    int command_gpio{19};
-    int data0_gpio{14};
-    int data1_gpio{15};
-    int data2_gpio{16};
-    int data3_gpio{17};
-    int enable_gpio{54};
+    int clock_gpio{static_cast<int>(pins::sd2Clock)};
+    int command_gpio{static_cast<int>(pins::sd2Command)};
+    int data0_gpio{static_cast<int>(pins::sd2Data0)};
+    int data1_gpio{static_cast<int>(pins::sd2Data1)};
+    int data2_gpio{static_cast<int>(pins::sd2Data2)};
+    int data3_gpio{static_cast<int>(pins::sd2Data3)};
+    int enable_gpio{static_cast<int>(pins::esp32c5Enable)};
 };
 
-struct Esp32c5ConnectivityConfig
+struct Esp32c5Config
 {
     Esp32c5SdioConfig expected_sdio{};
     Esp32c5FirmwareVersion minimum_firmware{};
@@ -85,9 +92,9 @@ struct Esp32c5CoprocessorInfo
     std::array<char, 32> idf_version{};
 };
 
-struct Esp32c5ConnectivityStatus
+struct Esp32c5Status
 {
-    Esp32c5ConnectivityState state{Esp32c5ConnectivityState::uninitialized};
+    Esp32c5State state{Esp32c5State::uninitialized};
     esp_err_t last_error{ESP_OK};
     bool transport_up{};
     bool wifi_started{};
@@ -110,22 +117,22 @@ struct Esp32c5WifiStationConfig
     std::uint16_t maximum_reconnect_attempts{0};
 };
 
-class Esp32c5Connectivity
+class Esp32c5Slave
 {
 public:
-    Esp32c5Connectivity() noexcept;
-    ~Esp32c5Connectivity();
+    Esp32c5Slave() noexcept;
+    ~Esp32c5Slave();
 
-    Esp32c5Connectivity(const Esp32c5Connectivity &) = delete;
-    Esp32c5Connectivity &operator=(const Esp32c5Connectivity &) = delete;
+    Esp32c5Slave(const Esp32c5Slave &) = delete;
+    Esp32c5Slave &operator=(const Esp32c5Slave &) = delete;
 
     [[nodiscard]] esp_err_t initialize(
-        const Esp32c5ConnectivityConfig &config = {});
+        const Esp32c5Config &config = {});
     [[nodiscard]] esp_err_t deinitialize();
     [[nodiscard]] esp_err_t recover();
 
     [[nodiscard]] bool isInitialized() const noexcept;
-    [[nodiscard]] Esp32c5ConnectivityStatus status() const noexcept;
+    [[nodiscard]] Esp32c5Status status() const noexcept;
     [[nodiscard]] esp_err_t coprocessorInfo(
         Esp32c5CoprocessorInfo &info) const noexcept;
     [[nodiscard]] esp_err_t activeSdioConfig(
@@ -163,6 +170,6 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-[[nodiscard]] const char *esp32c5ConnectivityStateName(
-    Esp32c5ConnectivityState state) noexcept;
+[[nodiscard]] const char *esp32c5StateName(
+    Esp32c5State state) noexcept;
 }

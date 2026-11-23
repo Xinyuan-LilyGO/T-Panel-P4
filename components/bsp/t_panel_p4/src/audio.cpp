@@ -1,4 +1,4 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -7,6 +7,7 @@
 #include <cstring>
 #include <limits>
 
+#include <driver/i2s_tdm.h>
 #include <esp_check.h>
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -20,6 +21,8 @@ namespace
     constexpr char kTag[] = "t_panel_p4_audio";
     constexpr float kEs8389MinVolumeDb = -95.5F;
     constexpr float kEs8389MaxVolumeDb = 32.0F;
+    constexpr auto kReferenceSlots =
+        static_cast<i2s_tdm_slot_mask_t>(I2S_TDM_SLOT0 | I2S_TDM_SLOT1 | I2S_TDM_SLOT2);
 
     // One output-volume value is shared by music playback, recorded-audio
     // playback and the settings panel.  Keep it outside Board so a temporary
@@ -290,13 +293,6 @@ namespace
                !(mode == I2S_SLOT_MODE_MONO && mask == I2S_STD_SLOT_BOTH);
     }
 
-    std::uint8_t volumePercent(float db) noexcept
-    {
-        const float normalized =
-            (db - kEs8389MinVolumeDb) / (kEs8389MaxVolumeDb - kEs8389MinVolumeDb);
-        return static_cast<std::uint8_t>(std::clamp(normalized * 100.0F, 0.0F, 100.0F) + 0.5F);
-    }
-
     float gainDb(bsp::T_PANEL_P4_BSP_NAMESPACE::AudioMicrophoneGain gain) noexcept
     {
         using G = bsp::T_PANEL_P4_BSP_NAMESPACE::AudioMicrophoneGain;
@@ -342,7 +338,9 @@ namespace
                a.dma_frames_per_descriptor == b.dma_frames_per_descriptor &&
                a.output_volume_db == b.output_volume_db && a.microphone_gain == b.microphone_gain &&
                a.no_dac_reference == b.no_dac_reference && a.enable_capture == b.enable_capture &&
-               a.enable_speaker == b.enable_speaker;
+               a.enable_speaker == b.enable_speaker &&
+               a.enable_aec_reference == b.enable_aec_reference &&
+               a.aec_reference_gain == b.aec_reference_gain;
     }
 
     esp_err_t validateConfig(const bsp::T_PANEL_P4_BSP_NAMESPACE::AudioConfig &config, i2s_data_bit_width_t &width) noexcept
@@ -356,6 +354,19 @@ namespace
             !validSlots(config.slot_mode, config.slot_mask) ||
             !toI2sWidth(config.word_length, width))
             return ESP_ERR_INVALID_ARG;
+        if (config.enable_aec_reference)
+        {
+            if (!bsp::T_PANEL_P4_BSP_NAMESPACE::pins::audioCaptureUsesEs7210)
+                return ESP_ERR_NOT_SUPPORTED;
+            if (!config.enable_capture ||
+                !std::isfinite(gainDb(config.aec_reference_gain)))
+                return ESP_ERR_INVALID_ARG;
+            // Four 16-bit wire slots fit the same 64 BCLK frame as the DAC's
+            // two 32-bit slots. MIC4 is unused and omitted from RX DMA.
+            if (config.word_length != bsp::T_PANEL_P4_BSP_NAMESPACE::AudioWordLength::bits16 ||
+                config.slot_mode != I2S_SLOT_MODE_STEREO || config.slot_mask != I2S_STD_SLOT_BOTH)
+                return ESP_ERR_NOT_SUPPORTED;
+        }
         return ESP_OK;
     }
 } // namespace
@@ -487,6 +498,11 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         i2s_cfg.clk_cfg.mclk_multiple = config.mclk_multiple;
         i2s_cfg.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(width, config.slot_mode);
         i2s_cfg.slot_cfg.slot_mask = config.slot_mask;
+        if (config.enable_aec_reference)
+        {
+            i2s_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_32BIT;
+            i2s_cfg.slot_cfg.ws_width = 32;
+        }
         i2s_cfg.gpio_cfg.mclk = pins::i2sMasterClock;
         i2s_cfg.gpio_cfg.bclk = pins::i2sBitClock;
         i2s_cfg.gpio_cfg.ws = pins::i2sWordSelect;
@@ -494,7 +510,28 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         i2s_cfg.gpio_cfg.din = pins::i2sDataIn;
         error = i2s_channel_init_std_mode(audio_tx_, &i2s_cfg);
         if (error == ESP_OK && audio_rx_ != nullptr)
-            error = i2s_channel_init_std_mode(audio_rx_, &i2s_cfg);
+        {
+            if (config.enable_aec_reference)
+            {
+                i2s_tdm_config_t rx_cfg{};
+                rx_cfg.clk_cfg = I2S_TDM_CLK_DEFAULT_CONFIG(config.sample_rate_hz);
+                rx_cfg.clk_cfg.mclk_multiple = config.mclk_multiple;
+                rx_cfg.slot_cfg = I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG(
+                    I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO, kReferenceSlots);
+                rx_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_16BIT;
+                rx_cfg.slot_cfg.total_slot = 4;
+                rx_cfg.slot_cfg.ws_width = 32;
+                rx_cfg.slot_cfg.left_align = true;
+                rx_cfg.gpio_cfg.mclk = pins::i2sMasterClock;
+                rx_cfg.gpio_cfg.bclk = pins::i2sBitClock;
+                rx_cfg.gpio_cfg.ws = pins::i2sWordSelect;
+                rx_cfg.gpio_cfg.dout = GPIO_NUM_NC;
+                rx_cfg.gpio_cfg.din = pins::i2sDataIn;
+                error = i2s_channel_init_tdm_mode(audio_rx_, &rx_cfg);
+            }
+            else
+                error = i2s_channel_init_std_mode(audio_rx_, &i2s_cfg);
+        }
         if (error != ESP_OK)
             return fail(error);
 
@@ -582,6 +619,8 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             adc_cfg.ctrl_if = audio_input_ctrl_if_;
             adc_cfg.master_mode = false;
             adc_cfg.mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2;
+            if (config.enable_aec_reference)
+                adc_cfg.mic_selected |= ES7210_SEL_MIC3;
             adc_cfg.mclk_src = ES7210_MCLK_FROM_PAD;
             adc_cfg.mclk_div = static_cast<std::uint16_t>(config.mclk_multiple);
             audio_input_codec_if_ = es7210_codec_new(&adc_cfg);
@@ -628,7 +667,19 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             audio_input_codec_ = esp_codec_dev_new(&input_cfg);
             if (audio_input_codec_ == nullptr)
                 return fail(ESP_ERR_NO_MEM);
-            error = esp_codec_dev_open(audio_input_codec_, &sample);
+            auto input_sample = sample;
+            if (config.enable_aec_reference)
+            {
+                input_sample.channel = 4; // Wire slots; the mask selects three PCM channels.
+                input_sample.channel_mask = static_cast<std::uint16_t>(kReferenceSlots);
+                // esp_codec_dev_open() drops data-interface errors. Check the
+                // duplex clock/slot reconfiguration before opening the ADC.
+                error = audio_data_if_->set_fmt(audio_data_if_, ESP_CODEC_DEV_TYPE_IN,
+                                               &input_sample);
+                if (error != ESP_OK)
+                    return fail(error);
+            }
+            error = esp_codec_dev_open(audio_input_codec_, &input_sample);
             if (error != ESP_OK)
                 return fail(error);
         }
@@ -652,12 +703,54 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         if (error != ESP_OK)
             return fail(error);
 
-        error = esp_codec_dev_set_out_vol(audio_codec_, volumePercent(config.output_volume_db));
+        if (config.enable_aec_reference)
+        {
+            i2s_chan_info_t tx_info{};
+            error = i2s_channel_get_info(audio_tx_, &tx_info);
+            // info still describes RX. Verify the driver applied both formats
+            // despite esp_codec_dev_open() ignoring data-interface errors.
+            if (error == ESP_OK &&
+                (tx_info.mode != I2S_COMM_MODE_STD || info.mode != I2S_COMM_MODE_TDM ||
+                 tx_info.mode_cfg == nullptr || info.mode_cfg == nullptr))
+                error = ESP_ERR_INVALID_STATE;
+            if (error == ESP_OK)
+            {
+                const auto &tx = *static_cast<const i2s_std_config_t *>(tx_info.mode_cfg);
+                const auto &rx = *static_cast<const i2s_tdm_config_t *>(info.mode_cfg);
+                if (tx.slot_cfg.data_bit_width != I2S_DATA_BIT_WIDTH_16BIT ||
+                    tx.slot_cfg.slot_bit_width != I2S_SLOT_BIT_WIDTH_32BIT ||
+                    tx.slot_cfg.ws_width != 32 || rx.slot_cfg.total_slot != 4 ||
+                    rx.slot_cfg.data_bit_width != I2S_DATA_BIT_WIDTH_16BIT ||
+                    rx.slot_cfg.slot_bit_width != I2S_SLOT_BIT_WIDTH_16BIT ||
+                    rx.slot_cfg.slot_mask != kReferenceSlots || rx.slot_cfg.ws_width != 32 ||
+                    tx_info.bclk_hz != static_cast<std::uint64_t>(config.sample_rate_hz) * 64U)
+                    error = ESP_ERR_INVALID_STATE;
+            }
+            if (error != ESP_OK)
+            {
+                ESP_LOGE(kTag, "AEC reference requires 64 BCLKs per frame: stereo TX, four-slot TDM RX");
+                return fail(error);
+            }
+        }
+
+        // The codec interface accepts dB directly. esp_codec_dev_set_out_vol()
+        // instead applies its default percentage-to-dB curve (-50 to 0 dB),
+        // which would attenuate a requested 0 dB to about -12.5 dB.
+        error = audio_codec_if_->set_vol(audio_codec_if_, config.output_volume_db);
         if (error == ESP_OK && config.enable_capture)
         {
             const auto *input_if =
                 audio_input_codec_if_ != nullptr ? audio_input_codec_if_ : audio_codec_if_;
-            error = input_if->set_mic_gain(input_if, gainDb(config.microphone_gain));
+            if (config.enable_aec_reference)
+            {
+                error = input_if->set_mic_channel_gain(input_if, 0x03,
+                                                      gainDb(config.microphone_gain));
+                if (error == ESP_OK)
+                    error = input_if->set_mic_channel_gain(input_if, 0x04,
+                                                          gainDb(config.aec_reference_gain));
+            }
+            else
+                error = input_if->set_mic_gain(input_if, gainDb(config.microphone_gain));
         }
         if (error == ESP_OK)
             error = setDacMuted(audio_ctrl_if_, false);
@@ -692,6 +785,8 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
                                                 : "ES8389",
                  static_cast<unsigned long>(config.sample_rate_hz),
                  static_cast<unsigned>(config.word_length));
+        if (config.enable_aec_reference)
+            ESP_LOGI(kTag, "capture order: MIC1, MIC2, MIC3 AEC reference (16-bit PCM)");
         return ESP_OK;
     }
 
@@ -797,6 +892,15 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         return audio_config_;
     }
 
+    std::uint8_t Board::audioCaptureChannelCount() const noexcept
+    {
+        if (!isAudioInitialized() || !audio_capture_enabled_)
+            return 0;
+        if (audio_config_.enable_aec_reference)
+            return 3;
+        return audio_config_.slot_mode == I2S_SLOT_MODE_MONO ? 1 : 2;
+    }
+
     AudioStatistics Board::audioStatistics() const noexcept
     {
         AudioStatistics s{};
@@ -835,6 +939,8 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             return ESP_ERR_INVALID_STATE;
         if (data == nullptr || size == 0U)
             return ESP_ERR_INVALID_ARG;
+        if (audio_config_.enable_aec_reference && size % (3U * sizeof(std::int16_t)) != 0U)
+            return ESP_ERR_INVALID_SIZE;
         ++audio_rx_calls_;
         const esp_err_t error = i2s_channel_read(audio_rx_, data, size, &bytes_read, timeout_ms);
         audio_rx_bytes_.fetch_add(static_cast<std::uint32_t>(bytes_read));
@@ -905,7 +1011,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             return ESP_ERR_INVALID_STATE;
         if (!std::isfinite(db) || db < kEs8389MinVolumeDb || db > kEs8389MaxVolumeDb)
             return ESP_ERR_INVALID_ARG;
-        const esp_err_t error = esp_codec_dev_set_out_vol(audio_codec_, volumePercent(db));
+        const esp_err_t error = audio_codec_if_->set_vol(audio_codec_if_, db);
         if (error == ESP_OK)
         {
             s_public_audio_volume_db.store(db);
@@ -1013,13 +1119,20 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         if (!isAudioInitialized() || !audio_capture_enabled_ || audio_rx_ == nullptr)
             return ESP_ERR_INVALID_STATE;
         const auto mask = static_cast<std::uint16_t>(channels);
-        if (mask == 0 || (mask & ~0x03U) != 0 || !std::isfinite(gainDb(gain)))
+        if (mask == 0 || (mask & ~0x07U) != 0 || !std::isfinite(gainDb(gain)))
             return ESP_ERR_INVALID_ARG;
+        if ((mask & 0x04U) != 0 && !audio_config_.enable_aec_reference)
+            return ESP_ERR_NOT_SUPPORTED;
         const auto *input_if =
             audio_input_codec_if_ != nullptr ? audio_input_codec_if_ : audio_codec_if_;
         const esp_err_t error = input_if->set_mic_channel_gain(input_if, mask, gainDb(gain));
         if (error == ESP_OK)
-            audio_config_.microphone_gain = gain;
+        {
+            if ((mask & 0x03U) != 0)
+                audio_config_.microphone_gain = gain;
+            if ((mask & 0x04U) != 0)
+                audio_config_.aec_reference_gain = gain;
+        }
         return error;
     }
 

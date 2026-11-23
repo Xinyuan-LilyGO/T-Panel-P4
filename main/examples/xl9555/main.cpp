@@ -8,7 +8,7 @@
 #include <pdl/core/status.hpp>
 #include <pdl/drivers/expand_io/xl9555.hpp>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #if T_PANEL_P4_BSP_IS_RECT
 #error "XL9555 example requires standard or round hardware"

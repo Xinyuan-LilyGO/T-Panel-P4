@@ -1,12 +1,16 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #include <driver/gpio.h>
 #include <driver/ledc.h>
 #include <esp_check.h>
 #include <esp_log.h>
+#include <esp_lcd_panel_commands.h>
+#include <esp_lcd_panel_io_interface.h>
+#include <esp_timer.h>
 #include <esp_private/esp_gpio_reserve.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <hal/config.h>
 #include <hal/mipi_dsi_ll.h>
 
 #if T_PANEL_P4_BSP_IS_STANDARD
@@ -37,10 +41,14 @@ namespace
     {
         switch (bits_per_pixel)
         {
-        case 16: return LCD_COLOR_FMT_RGB565;
-        case 18: return LCD_COLOR_FMT_RGB666;
-        case 24: return LCD_COLOR_FMT_RGB888;
-        default: return {};
+        case 16:
+            return LCD_COLOR_FMT_RGB565;
+        // case 18:
+        //     return LCD_COLOR_FMT_RGB666;
+        case 24:
+            return LCD_COLOR_FMT_RGB888;
+        default:
+            return {};
         }
     }
 
@@ -48,10 +56,14 @@ namespace
     {
         switch (format)
         {
-        case LCD_COLOR_FMT_RGB565: return "RGB565";
-        case LCD_COLOR_FMT_RGB666: return "RGB666";
-        case LCD_COLOR_FMT_RGB888: return "RGB888";
-        default: return "unsupported";
+        case LCD_COLOR_FMT_RGB565:
+            return "RGB565";
+        // case LCD_COLOR_FMT_RGB666:
+        //     return "RGB666";
+        case LCD_COLOR_FMT_RGB888:
+            return "RGB888";
+        default:
+            return "unsupported";
         }
     }
 
@@ -229,11 +241,21 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         const lcd_color_format_t out_color_format = panelColorFormat(config.bits_per_pixel);
         if (out_color_format == lcd_color_format_t{} ||
             (config.in_color_format != LCD_COLOR_FMT_RGB565 &&
-             config.in_color_format != LCD_COLOR_FMT_RGB666 &&
+            //  config.in_color_format != LCD_COLOR_FMT_RGB666 &&
              config.in_color_format != LCD_COLOR_FMT_RGB888))
         {
             return ESP_ERR_NOT_SUPPORTED;
         }
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) < 300
+        // Pre-v3 ESP32-P4 uses raw_type for both input and output RGB formats.
+        // ESP-IDF sets the output last, overwriting the input format selector.
+        ESP_RETURN_ON_FALSE(
+            config.in_color_format == out_color_format,
+            ESP_ERR_NOT_SUPPORTED,
+            kTag,
+            "Pre-v3 ESP32-P4 requires matching DPI input/output RGB formats (input %s, panel %u bpp)",
+            colorFormatName(config.in_color_format), config.bits_per_pixel);
+#endif
         const auto &hardware = detail::displayHardwareConfig();
 
         ESP_RETURN_ON_ERROR(initializePower(), kTag, "initialize device power failed");
@@ -317,13 +339,17 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         panel_config.init_sequence = pdl::display::jd9365BoardInitSequence();
 #elif T_PANEL_P4_BSP_IS_ROUND
         panel_config.init_sequence = pdl::display::jd9365daBoeRoundInitSequence();
+#elif T_PANEL_P4_BSP_IS_RECT
+        panel_config.init_sequence = pdl::display::ili9882BoardInitSequence();
 #endif
         panel_config.reset_gpio = GPIO_NUM_NC;
-#if T_PANEL_P4_BSP_IS_ROUND
-        // The BOE round module needs BGR panel order for RGB framebuffer data.
-        panel_config.color_order = LCD_RGB_ELEMENT_ORDER_BGR;
-#else
+
+#if T_PANEL_P4_BSP_IS_STANDARD
         panel_config.color_order = LCD_RGB_ELEMENT_ORDER_RGB;
+#elif T_PANEL_P4_BSP_IS_ROUND
+        panel_config.color_order = LCD_RGB_ELEMENT_ORDER_BGR;
+#elif T_PANEL_P4_BSP_IS_RECT
+        panel_config.color_order = LCD_RGB_ELEMENT_ORDER_BGR;
 #endif
         panel_config.lane_count = kDsiLaneCount;
         panel_config.bits_per_pixel = config.bits_per_pixel;
@@ -332,7 +358,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         error = pdl::display::newJd9365Panel(dbi_io_, panel_config, &panel_);
 #elif T_PANEL_P4_BSP_IS_ROUND
         error = pdl::display::newJd9365daPanel(dbi_io_, panel_config, &panel_);
-#else
+#elif T_PANEL_P4_BSP_IS_RECT
         error = pdl::display::newIli9882Panel(dbi_io_, panel_config, &panel_);
 #endif
         if (error != ESP_OK)

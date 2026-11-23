@@ -14,9 +14,9 @@
 #include <sdmmc_cmd.h>
 #include <driver/gpio.h>
 
-#include <bsp/board.hpp>
-#include <bsp/pins.hpp>
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/board.hpp>
+#include <bsp/pins/pins.hpp>
+#include <bsp/api/slave_c5.hpp>
 #include <ui/core/standard_lvgl_port.hpp>
 #include <ui/core/status_bar.h>
 #include <ui/core/ui.h>
@@ -41,9 +41,9 @@ namespace
     struct Application
     {
         bsp::t_panel_p4_standard::Board board;
-        connectivity::Esp32c5Connectivity esp32c5;
-        connectivity::Esp32c5ConnectivityConfig esp32c5_config{};
-        connectivity::Esp32c5WifiStationConfig wifi_config{};
+        bsp::Esp32c5Slave esp32c5;
+        bsp::Esp32c5Config esp32c5_config{};
+        bsp::Esp32c5WifiStationConfig wifi_config{};
         bool wifi_config_valid{};
         esp_err_t axp517_result{ESP_ERR_INVALID_STATE};
         esp_err_t wifi_result{ESP_ERR_INVALID_STATE};
@@ -123,7 +123,7 @@ namespace
 
     void provideStatusBar(Application &app, status_info_t &status)
     {
-        const connectivity::Esp32c5ConnectivityStatus wifi_status =
+        const bsp::Esp32c5Status wifi_status =
             app.esp32c5.status();
         status.wifi_connected = wifi_status.wifi_connected;
         status.wifi_rssi_dbm = -127;
@@ -164,12 +164,13 @@ namespace
                                 : ESP_ERR_INVALID_STATE;
         logDeviceResult("AXP517", app.axp517_result);
 
-        // Board::initialize() owns peripheral bring-up. Read its results here;
-        // the BSP's default SD clock is already the conservative 20 MHz.
-        app.sd_card_result = app.board.isSdCardInitialized()
-                                 ? ESP_OK
-                                 : ESP_ERR_INVALID_STATE;
-        logDeviceResult("SD card", app.sd_card_result);
+        // Board::initialize(false) intentionally skips SD-card bring-up so the
+        // factory UI can boot with no card inserted.
+        app.sd_card_result = app.board.isSdCardInitialized() ? ESP_OK : ESP_ERR_NOT_FOUND;
+        if (app.sd_card_result == ESP_OK)
+            logDeviceResult("SD card", app.sd_card_result);
+        else
+            ESP_LOGW(kTag, "SD card unavailable; continuing without mounted filesystem");
 
         app.lora_result = app.board.isLoraInitialized()
                               ? ESP_OK
@@ -186,7 +187,7 @@ namespace
         logDeviceResult("ESP32-C5 SDIO", app.esp32c5_result);
         if (app.esp32c5_result == ESP_OK)
         {
-            connectivity::Esp32c5CoprocessorInfo info{};
+            bsp::Esp32c5CoprocessorInfo info{};
             const esp_err_t info_result = app.esp32c5.coprocessorInfo(info);
             if (info_result == ESP_OK)
             {
@@ -208,7 +209,7 @@ namespace
             }
 
             const esp_err_t wifi_config_result =
-                connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+                bsp::Esp32c5Slave::makeWifiStationConfig(
                     "xinyuandianzi",
                     "AA15994823428",
                     app.wifi_config);
@@ -551,7 +552,7 @@ extern "C" esp_err_t settings_control_run_check(char *buffer, size_t buffer_size
         return ESP_ERR_INVALID_SIZE;
     failed += passed ? 0U : 1U;
 
-    connectivity::Esp32c5CoprocessorInfo coprocessor_info{};
+    bsp::Esp32c5CoprocessorInfo coprocessor_info{};
     const esp_err_t c5_error = application.esp32c5.isInitialized()
                                    ? application.esp32c5.coprocessorInfo(coprocessor_info)
                                    : ESP_ERR_INVALID_STATE;
@@ -721,7 +722,9 @@ extern "C" void app_main(void)
     logHeapSnapshot("before board initialize");
     // Initialize every BSP peripheral once, with BSP ordering and rollback.
     // Camera streaming and application connectivity are started separately.
-    ESP_ERROR_CHECK(application.board.initialize());
+    // SD is optional for the factory UI; pages that access /sdcard report their
+    // own unavailable-card errors instead of preventing the rest of the UI from booting.
+    ESP_ERROR_CHECK(application.board.initialize(false));
     logHeapSnapshot("after board initialize");
     ESP_ERROR_CHECK(application.board.setBacklightBrightness(50));
 

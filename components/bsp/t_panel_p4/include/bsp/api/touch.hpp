@@ -1,4 +1,6 @@
-#pragma once
+#ifndef BSP_T_PANEL_P4_TOUCH_TYPES_DEFINED
+#define BSP_T_PANEL_P4_TOUCH_TYPES_DEFINED
+
 
 #include <bsp/hardware.hpp>
 #include <array>
@@ -127,3 +129,40 @@ namespace bsp
     using TouchPoint = T_PANEL_P4_BSP_NAMESPACE::TouchPoint;
     using TouchData = T_PANEL_P4_BSP_NAMESPACE::TouchData;
 }
+
+#endif // BSP_T_PANEL_P4_TOUCH_TYPES_DEFINED
+
+#if defined(BSP_BOARD_API_PUBLIC)
+
+// 3.5 触摸与中断 API：src/touch.cpp
+// ========================================================================
+[[nodiscard]] esp_err_t initializeTouch();
+[[nodiscard]] esp_err_t initializeTouch(const TouchConfig &config);
+[[nodiscard]] esp_err_t deinitializeTouch();
+[[nodiscard]] bool isTouchInitialized() const noexcept;
+[[nodiscard]] TouchConfig touchConfig() const noexcept;
+[[nodiscard]] esp_err_t initializeTouchInterrupt(
+    pdl::esp_idf::GpioInterrupt::IsrHandler handler, void *argument = nullptr,
+    gpio_int_type_t trigger = GPIO_INTR_NEGEDGE);
+[[nodiscard]] esp_err_t deinitializeTouchInterrupt();
+
+// ========================================================================
+// 3.13 触摸控制器句柄：src/touch.cpp
+// ========================================================================
+[[nodiscard]] TouchController *touchController() noexcept;
+
+#elif defined(BSP_BOARD_API_PRIVATE)
+
+// 4.4 触摸驱动与 ISR 转发：src/touch.cpp；复位时序见 src/board.cpp
+        // ========================================================================
+        [[nodiscard]] esp_err_t resetTouchControllerImpl(bool isIOExpander,
+                                                        bool restore_interrupt_input);
+        std::optional<pdl::esp_idf::I2cDevice> touch_transport_;
+        std::optional<TouchController> touch_;
+        TouchConfig touch_config_{};
+        static void touchInterruptHandler(void *argument);
+        std::atomic<pdl::esp_idf::GpioInterrupt::IsrHandler> touch_interrupt_handler_{nullptr};
+        std::atomic<void *> touch_interrupt_argument_{nullptr};
+        pdl::esp_idf::GpioInterrupt touch_interrupt_;
+
+#endif

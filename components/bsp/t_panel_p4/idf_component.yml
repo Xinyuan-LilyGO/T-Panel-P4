@@ -1,4 +1,6 @@
 dependencies:
+  idf:
+    version: ">=5.5.3"
   espressif/esp_codec_dev:
     version: "1.5.11"
     require: public
@@ -37,3 +39,13 @@ dependencies:
     git: https://github.com/AQiang77/Peripheral_dirvers_lib.git
     version: "1.0.0"
     require: public
+  espressif/esp_hosted:
+    version: "2.12.13"
+    require: public
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [standard, round]'
+  espressif/esp_wifi_remote:
+    version: "1.6.4"
+    require: public
+    rules:
+      - if: '${T_PANEL_P4_BSP_PROFILE} in [standard, round]'

@@ -105,4 +105,3 @@ is held; the example keeps three. Approximate memory use is:
 The sensor requires the board's external 24 MHz camera clock and its standard
 one-lane MIPI CSI connection. FPS, tearing and memory-bandwidth behavior require
 validation on the selected hardware.
-

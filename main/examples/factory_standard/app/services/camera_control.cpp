@@ -1,7 +1,7 @@
 #include "camera_control.h"
 #include "service_context.hpp"
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <esp_err.h>
 #include <esp_log.h>
 #include <driver/jpeg_encode.h>

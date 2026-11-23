@@ -1,7 +1,7 @@
 #include "lora_control.h"
 #include "service_context.hpp"
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>

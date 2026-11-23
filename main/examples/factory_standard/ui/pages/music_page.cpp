@@ -18,7 +18,7 @@
 
 #include <app/services/music_audio.h>
 #include <app/services/service_context.hpp>
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #define MUSIC_DIRECTORY "/sdcard/music"
 #define MUSIC_SCREEN_WIDTH 720

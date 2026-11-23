@@ -1,25 +1,25 @@
 #pragma once
 
-#include <bsp/board.hpp>
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/board.hpp>
+#include <bsp/api/slave_c5.hpp>
 
 namespace factory::services
 {
 struct Context
 {
     bsp::t_panel_p4_standard::Board *board{};
-    connectivity::Esp32c5Connectivity *connectivity{};
-    connectivity::Esp32c5WifiStationConfig *wifi_config{};
+    bsp::Esp32c5Slave *connectivity{};
+    bsp::Esp32c5WifiStationConfig *wifi_config{};
     bool *wifi_config_valid{};
     esp_err_t *connectivity_result{};
 };
 
 void set_context(bsp::t_panel_p4_standard::Board &board,
-                 connectivity::Esp32c5Connectivity &connectivity,
-                 connectivity::Esp32c5WifiStationConfig *wifi_config = nullptr,
+                 bsp::Esp32c5Slave &connectivity,
+                 bsp::Esp32c5WifiStationConfig *wifi_config = nullptr,
                  bool *wifi_config_valid = nullptr,
                  esp_err_t *connectivity_result = nullptr);
 const Context &context();
 bsp::t_panel_p4_standard::Board *board();
-connectivity::Esp32c5Connectivity *connectivity();
+bsp::Esp32c5Slave *connectivity();
 }

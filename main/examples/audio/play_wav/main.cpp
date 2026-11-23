@@ -7,7 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include "wav.hpp"
 
 extern const std::uint8_t wav_start[] asm("_binary_sample_3s_wav_start");

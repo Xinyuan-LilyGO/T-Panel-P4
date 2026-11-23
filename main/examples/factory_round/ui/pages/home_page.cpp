@@ -16,8 +16,8 @@
 #include <lvgl_page_manager.h>
 #include <pdl/drivers/charge/axp517/axp517.hpp>
 
-#include <bsp/board.hpp>
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/board.hpp>
+#include <bsp/api/slave_c5.hpp>
 
 namespace factory::ui
 {
@@ -42,7 +42,7 @@ namespace factory::ui
         lv_obj_t *s_status_battery_icon_label{};
         lv_obj_t *s_status_battery_percent_label{};
         bsp::t_panel_p4_round::Board *s_home_board{};
-        connectivity::Esp32c5Connectivity *s_home_connectivity{};
+        bsp::Esp32c5Slave *s_home_connectivity{};
         bool s_time_sync_started{};
 
         void timeSyncTask(void *)
@@ -116,7 +116,7 @@ namespace factory::ui
                 bool bluetooth_enabled = false;
                 if (s_home_connectivity != nullptr)
                 {
-                    const connectivity::Esp32c5ConnectivityStatus status =
+                    const bsp::Esp32c5Status status =
                         s_home_connectivity->status();
                     wifi_connected = status.wifi_connected;
                     bluetooth_enabled = status.bluetooth_controller_enabled;
@@ -392,7 +392,7 @@ namespace factory::ui
         s_home_board = board;
     }
 
-    void setHomeConnectivity(connectivity::Esp32c5Connectivity *connectivity)
+    void setHomeConnectivity(bsp::Esp32c5Slave *connectivity)
     {
         s_home_connectivity = connectivity;
     }

@@ -45,7 +45,7 @@ std::atomic<std::uint64_t> s_peer_address{0};
 std::uint8_t s_own_addr_type{};
 std::uint16_t s_characteristic_value_handle{};
 
-connectivity::Esp32c5Connectivity *radio()
+bsp::Esp32c5Slave *radio()
 {
     return factory::services::connectivity();
 }

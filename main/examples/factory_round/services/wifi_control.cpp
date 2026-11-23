@@ -17,17 +17,17 @@ namespace
 constexpr TickType_t kReadyPollPeriod = pdMS_TO_TICKS(50);
 constexpr TickType_t kReadyTimeout = pdMS_TO_TICKS(3000);
 
-connectivity::Esp32c5Connectivity *radio()
+bsp::Esp32c5Slave *radio()
 {
     return factory::services::connectivity();
 }
 
-connectivity::Esp32c5ConnectivityStatus radioStatus()
+bsp::Esp32c5Status radioStatus()
 {
     const auto *connectivity = radio();
     return connectivity != nullptr
                ? connectivity->status()
-               : connectivity::Esp32c5ConnectivityStatus{};
+               : bsp::Esp32c5Status{};
 }
 
 bool connectivityReady()
@@ -41,7 +41,7 @@ bool connectivityReady()
         return false;
 
     const auto status = connectivity->status();
-    return status.state == connectivity::Esp32c5ConnectivityState::ready &&
+    return status.state == bsp::Esp32c5State::ready &&
            status.transport_up;
 }
 
@@ -56,9 +56,9 @@ bool waitForConnectivityReady()
     return connectivityReady();
 }
 
-connectivity::Esp32c5WifiStationConfig &wifiConfig()
+bsp::Esp32c5WifiStationConfig &wifiConfig()
 {
-    static connectivity::Esp32c5WifiStationConfig fallback{};
+    static bsp::Esp32c5WifiStationConfig fallback{};
     const auto &context = factory::services::context();
     return context.wifi_config != nullptr ? *context.wifi_config : fallback;
 }
@@ -73,10 +73,10 @@ bool &wifiConfigValid()
 }
 
 esp_err_t makeDefaultConfig(
-    connectivity::Esp32c5WifiStationConfig &config)
+    bsp::Esp32c5WifiStationConfig &config)
 {
     const esp_err_t result =
-        connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+        bsp::Esp32c5Slave::makeWifiStationConfig(
             WIFI_SSID, WIFI_PASS, config);
     if (result != ESP_OK)
         return result;
@@ -213,9 +213,9 @@ extern "C" esp_err_t wifi_control_connect(
     if (connectivity == nullptr || !waitForConnectivityReady())
         return ESP_ERR_INVALID_STATE;
 
-    connectivity::Esp32c5WifiStationConfig config{};
+    bsp::Esp32c5WifiStationConfig config{};
     const esp_err_t config_result =
-        connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+        bsp::Esp32c5Slave::makeWifiStationConfig(
             ssid, password, config);
     if (config_result != ESP_OK)
         return config_result;

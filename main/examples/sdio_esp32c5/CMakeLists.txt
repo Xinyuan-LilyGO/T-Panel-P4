@@ -3,7 +3,6 @@ list(APPEND EXAMPLE_SRCS
 )
 
 list(APPEND EXAMPLE_PRIV_REQUIRES
-    esp32c5_connectivity
     esp_netif
     t_panel_p4
 )

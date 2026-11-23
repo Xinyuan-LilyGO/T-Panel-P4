@@ -1,4 +1,4 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #include <cstdio>
 
@@ -391,6 +391,11 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 
     esp_err_t Board::initialize()
     {
+        return initialize(true);
+    }
+
+    esp_err_t Board::initialize(bool initialize_sd_card)
+    {
         if (isInitialized())
             return ESP_OK;
 
@@ -416,7 +421,10 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
 #endif
             {"SdCard", isSdCardInitialized(), &Board::initializeSdCard, &Board::deinitializeSdCard},
         };
-        for (std::size_t index = 0; index < sizeof(steps) / sizeof(steps[0]); ++index)
+        const std::size_t step_count = initialize_sd_card
+                                           ? sizeof(steps) / sizeof(steps[0])
+                                           : sizeof(steps) / sizeof(steps[0]) - 1U;
+        for (std::size_t index = 0; index < step_count; ++index)
         {
             if (steps[index].ready)
                 continue;
@@ -454,10 +462,10 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         ESP_RETURN_ON_ERROR(deinitializeLora(), kTag, "deinitialize LoRa failed");
         if (isIoExpanderInitialized())
         {
-            setSpeakerEnabled(false, true);
-            setSdPowerEnabled(false, true);
-            setLoraPowerEnabled(false, true);
-            setC5AudioLcdEnabled(false, true);
+            ESP_RETURN_ON_ERROR(setSpeakerEnabled(false, true), kTag, "disable speaker failed");
+            ESP_RETURN_ON_ERROR(setSdPowerEnabled(false, true), kTag, "disable SD power failed");
+            ESP_RETURN_ON_ERROR(setLoraPowerEnabled(false, true), kTag, "disable LoRa power failed");
+            ESP_RETURN_ON_ERROR(setC5AudioLcdEnabled(false, true), kTag, "disable C5/audio/LCD power failed");
         }
 #elif T_PANEL_P4_BSP_IS_RECT
         ESP_RETURN_ON_ERROR(deinitializeMotor(), kTag, "deinitialize motor failed");
@@ -816,7 +824,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         return spi_bus_.isInitialized() ? &spi_bus_ : nullptr;
     }
 
-#if !T_PANEL_P4_BSP_IS_RECT
+#if T_PANEL_P4_BSP_IS_STANDARD || T_PANEL_P4_BSP_IS_ROUND
     pdl::expand_io::Xl9555 *Board::ioExpander() noexcept
     {
         return isIoExpanderInitialized() ? &*xl9555_ : nullptr;

@@ -17,17 +17,30 @@ RECT T-Panel-P4. Chip-level register behavior remains in
 - GPIO31 speaker-amplifier enable
 - SDMMC slot 0 in 4-bit mode on GPIO43/GPIO44/GPIO39-GPIO42
 - SD-card power through the on-chip LDO channel 4
-- Direct LCD reset GPIO45 and touch reset GPIO22
+- LCD VCI power-enable GPIO45 and touch reset GPIO22
+- QMI8658C six-axis IMU at `0x6A` or `0x6B` and QMC6309 magnetometer at `0x7C`
+- DRV2605 haptic driver at `0x5A`, enabled by GPIO21; initialized in standby
 
 The HD0549S001 ILI9882 command table is supplied by `peripheral_drivers_lib`.
 The generic ILI9882 driver receives the vendor sequence automatically, or a
 board may provide its own static sequence through `Ili9882Config::init_sequence`.
 The 720x1440 scan timing is selected in the shared `src/board.cpp`. Display
-defaults are RGB888 input, two framebuffers and a 24-bit panel; see the shared
-BSP README for `bsp::DisplayConfig` overrides. DCS display-ID reads are disabled
-by default: on this panel a read of command `0x04` can receive no response and
-leave ESP-IDF 5.5 waiting indefinitely for the DSI RX FIFO. The ID is not needed
-to send the initialization sequence or start display output.
+initialization holds VCI low while preparing DSI, then reproduces the old
+driver's GPIO45 waveform: high 5 ms, low 10 ms, high 120 ms before sending the
+vendor command table. GPIO45 switches only the 2.8 V VCI rail; IOVCC remains
+powered from 3.3 V and the LCD RESET pin has an RC pull-up. GPIO45 is therefore
+a power enable, rather than a direct LCD reset signal.
+
+Display defaults are RGB888 input, two framebuffers and a 24-bit panel; see the shared
+BSP README for `bsp::DisplayConfig` overrides. DCS diagnostics are disabled by
+default. When `read_display_id` is enabled, the BSP reads ID (`0x04`)
+before initialization with bounded FIFO waits, logs DSI status,
+and stops initialization on a timeout. This avoids the ESP-IDF 5.5 receive function's
+unbounded RX FIFO wait. Command ACK is enabled as in the old driver. DBI writes
+use the same packet formats with bounded FIFO waits. BTA is enabled by the ID
+read, or directly when diagnostics are disabled. After starting DPI, the BSP
+sends DISPON alone as in the old driver. The ID is not
+needed to send the initialization sequence or start display output.
 
 Touch initialization probes `0x41` after hardware reset, then checks the
 Ilitek protocol and firmware version. ICE chip-ID reads are best effort:
@@ -41,7 +54,7 @@ notified task, outside the ISR.
 ## Basic use
 
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::t_panel_p4_rect::Board board;
 
@@ -54,14 +67,18 @@ esp_lcd_panel_handle_t panel = board.displayPanel();
 ESP_ERROR_CHECK(board.setBacklightBrightness(100));
 ```
 
-`initialize()` initializes the entire board: power, display, touch, audio, camera, and SD card.
+`initialize()` initializes the entire board: power, display, touch, audio, camera, sensors, motor, and SD card.
 It uses default configurations only for devices that are not already ready.
 An absent device (including a missing SD card) returns an error. Applications
 that need fewer devices, custom settings, or optional-device error handling
 should call the corresponding `initializeXxx()` methods directly, as above.
 
+Pass `false` to `initialize(false)` to skip SD-card initialization while keeping
+the other default peripherals and their rollback behavior. A later call to the
+no-argument `initialize()` can initialize the SD card when it becomes available.
+
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::Board board;
 ESP_ERROR_CHECK(board.initialize()); // All default peripherals; requires an SD card.
@@ -102,12 +119,12 @@ VBUS, fault, and power-status APIs without creating an AXP517 transport.
 
 ## Device access
 
-The build-selected `<bsp/board.hpp>` header provides `bsp::Board` and
+The build-selected `<bsp/api/board.hpp>` header provides `bsp::Board` and
 `bsp::Devices` for applications shared by standard, round, and rect hardware.
 The board-specific header and namespace remain available.
 
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::Board board;
 ESP_ERROR_CHECK(board.initializePower());
@@ -155,7 +172,7 @@ and dropped frames plus pipeline recovery/error counters.
 
 Additional board controls are available for the speaker amplifier, SD power,
 and touch-controller reset. Pin constants are declared in
-`bsp/pins.hpp`.
+`bsp/pins/pins.hpp`.
 
 ## Power modes
 
@@ -193,9 +210,14 @@ deep_sleep.timer_wakeup_us = 60'000'000;
 ESP_ERROR_CHECK(board.enterDeepSleep(deep_sleep));
 ```
 
-Before deep sleep, the BSP shuts down all owned peripherals and holds the LCD
-backlight and I2S output pins low. `initializeI2cBus()` releases those GPIO
-holds after a deep-sleep reset.
+Before deep sleep, the BSP shuts down all owned peripherals and holds the
+backlight, I2C, I2S outputs, SD clock, speaker/motor enables, touch reset, LCD
+power and camera flash enables low. The SD command/data bus remains isolated
+because its power rail stays on. The selected wakeup GPIO, console, external
+outputs/IRQs, buttons, USB and memory pads are not forced low. The console uses
+sleep isolation. I2C external pull-ups still draw current when held low.
+`initializeI2cBus()` releases the holds after a deep-sleep reset; backlight
+initialization releases its own hold after preloading a safe low level.
 
 ## SDK configuration profiles
 
@@ -237,7 +259,7 @@ the SD card, call `initializeSdCard()` directly. The default configuration mount
 ```cpp
 #include <cstdio>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::t_panel_p4_rect::Board board;
 
@@ -351,6 +373,60 @@ controls include `setAudioVolumeDb()`, `setAudioMuted()`,
 `setAudioCaptureMuted()`, and `setMicrophoneGain()`. Capture mute is programmed and verified in the
 ES7210 ADC; successful muted reads are also zero-filled in software.
 Microphone gain is programmed in the ES7210 (quantized to its supported gain steps).
+
+### MIC3 AEC reference
+
+The board's AEC circuit feeds the ES8389 analog playback output into ES7210
+MIC3. Enable this reference explicitly; the default remains MIC1/MIC2 capture.
+This supplies synchronized microphone/reference PCM for an application AEC
+algorithm; the BSP does not perform echo cancellation.
+
+```cpp
+namespace rect = bsp::t_panel_p4_rect;
+rect::Board board;
+rect::AudioConfig config{};
+config.enable_aec_reference = true;
+config.aec_reference_gain = rect::AudioMicrophoneGain::db0;
+ESP_ERROR_CHECK(board.initializeAudio(config));
+
+// 256 capture frames: MIC1, MIC2, MIC3 reference, repeated in that order.
+std::int16_t samples[256 * 3]{};
+std::size_t bytes_read{};
+ESP_ERROR_CHECK(board.readAudio(samples, sizeof(samples), bytes_read));
+const std::size_t frames_read = bytes_read / (3 * sizeof(std::int16_t));
+// Frame i: samples[3*i], samples[3*i+1], samples[3*i+2].
+// Feed these microphone/reference samples to the application's AEC algorithm.
+(void)frames_read;
+
+ESP_ERROR_CHECK(board.setMicrophoneGain(
+    rect::AudioMicrophoneGain::db0, rect::AudioMicrophoneChannel::reference));
+ESP_ERROR_CHECK(board.deinitializeAudio());
+```
+
+This mode requires `enable_capture=true`, 16-bit samples, stereo slot mode and
+`I2S_STD_SLOT_BOTH`. Unsupported formats and boards return
+`ESP_ERR_NOT_SUPPORTED`. RX uses four 16-bit TDM wire slots, selecting slots
+0/1/2 for MIC1/MIC2/MIC3 and discarding the unused MIC4 slot. TX continues to
+accept stereo 16-bit PCM in two 32-bit wire slots; both paths use 64 BCLKs per
+sample frame. The BSP verifies the applied slot and clock configuration during
+initialization. `audioReceiveChannel()` exposes this TDM RX handle.
+
+`audioCaptureChannelCount()` reports 3 while capture is enabled. Every
+`readAudio()` request must contain whole six-byte capture frames; other sizes
+return `ESP_ERR_INVALID_SIZE`. Do not write the three-channel buffer directly
+to the stereo output: extract or process the microphone channels first.
+`aec_reference_gain` defaults to 0 dB independently of `microphone_gain`.
+`AudioMicrophoneChannel::both` still adjusts MIC1/MIC2 only. Capture mute covers
+all three channels. `no_dac_reference` configures the ES8389's own ADC reference
+path and does not enable or disable MIC3.
+
+The WAV recorder saves all three captured channels with a matching WAV header.
+Its chunk size is rounded down to a whole six-byte frame (4096 becomes 4092),
+so `startRecording(path)` also works with its default configuration. The
+resulting three-channel WAV is intended for capture analysis or AEC processing.
+Stop application RX/TX users before calling `reconfigureAudio()` to change
+`enable_aec_reference`; the existing BSP lifecycle also stops its own recording
+and music workers.
 
 `audioStatistics()` reports TX/RX calls, transferred bytes, timeouts, errors,
 and short transfers. Call `resetAudioStatistics()` before measuring a specific

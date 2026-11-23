@@ -8,8 +8,8 @@ factory::services::Context s_context{};
 namespace factory::services
 {
 void set_context(bsp::t_panel_p4_standard::Board &board,
-                 connectivity::Esp32c5Connectivity &connectivity,
-                 connectivity::Esp32c5WifiStationConfig *wifi_config,
+                 bsp::Esp32c5Slave &connectivity,
+                 bsp::Esp32c5WifiStationConfig *wifi_config,
                  bool *wifi_config_valid,
                  esp_err_t *connectivity_result)
 {
@@ -30,7 +30,7 @@ bsp::t_panel_p4_standard::Board *board()
     return s_context.board;
 }
 
-connectivity::Esp32c5Connectivity *connectivity()
+bsp::Esp32c5Slave *connectivity()
 {
     return s_context.connectivity;
 }

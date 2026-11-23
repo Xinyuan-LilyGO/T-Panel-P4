@@ -23,7 +23,7 @@
 #include <lvgl_page_manager.h>
 #include <services/service_context.hpp>
 #include <services/settings_control.h>
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 extern "C" const lv_image_dsc_t _album_art_RGB565A8_240x240;
 

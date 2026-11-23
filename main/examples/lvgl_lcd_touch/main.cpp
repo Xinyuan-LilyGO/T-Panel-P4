@@ -15,7 +15,7 @@
 
 #include <pdl/core/status.hpp>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 namespace
 {

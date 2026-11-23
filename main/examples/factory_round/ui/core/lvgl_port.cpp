@@ -15,7 +15,7 @@
 #include <freertos/semphr.h>
 #include <lvgl.h>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <pdl/core/status.hpp>
 #include <pdl/drivers/touch/gt911/gt911.hpp>
 

@@ -6,9 +6,9 @@ namespace bsp::t_panel_p4_round
 class Board;
 }
 
-namespace connectivity
+namespace bsp
 {
-class Esp32c5Connectivity;
+class Esp32c5Slave;
 }
 #endif
 
@@ -36,6 +36,6 @@ void setHomeBoard(bsp::t_panel_p4_round::Board *board);
 void setCameraBoard(bsp::t_panel_p4_round::Board *board);
 
 /** Provide the ESP32-C5 status source used by the Home connectivity footer. */
-void setHomeConnectivity(connectivity::Esp32c5Connectivity *connectivity);
+void setHomeConnectivity(bsp::Esp32c5Slave *connectivity);
 }
 #endif

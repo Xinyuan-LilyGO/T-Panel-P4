@@ -278,4 +278,4 @@ extern "C" void home_page_register(void)
 
     page.on_leave = home_page_leave;
     ui_page_register(&page);
-}
+}

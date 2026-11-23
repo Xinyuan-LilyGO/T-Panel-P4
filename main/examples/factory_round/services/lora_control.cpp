@@ -1,7 +1,7 @@
 #include "lora_control.h"
 #include "service_context.hpp"
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -378,4 +378,3 @@ extern "C" bool lora_control_poll_event(lora_control_event_t *event)
     return event != nullptr && s_events != nullptr &&
            xQueueReceive(s_events, event, 0) == pdTRUE;
 }
-

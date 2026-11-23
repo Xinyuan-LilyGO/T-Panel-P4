@@ -18,6 +18,15 @@ MIPI-DPI driver. Buffer swaps are synchronized to the display refresh event,
 so the flush path performs cache write-back and framebuffer switching without
 copying each 48-line block into a separate display buffer.
 
+The framebuffer format follows the configured ESP32-P4 revision. Builds for
+pre-v3 chips (including the current rect profile) use RGB888 framebuffers and
+24-bit panel output. On those chips the DSI bridge shares its input/output RGB
+format selector, so RGB565 input with RGB888 output is unsupported and can
+leave the display blue. Builds targeting v3 or newer retain RGB565 framebuffers
+with 24-bit panel output. LVGL's display format and full-frame buffer size match
+the selected framebuffer format. Account for the different memory bandwidth
+when comparing FPS across board revisions.
+
 Configure and build from an ESP-IDF 5.5.3 terminal:
 
 ```powershell
@@ -63,4 +72,3 @@ the PPA backend. For an application UI, prefer opaque RGB565 images and opaque
 row backgrounds, keep fixed headers outside the scrolling container, avoid
 shadows and layered opacity on moving rows, and instantiate or reuse only the
 visible rows.
-

@@ -45,6 +45,5 @@ list(APPEND EXAMPLE_PRIV_REQUIRES
     ${FACTORY_LVGL_COMPONENT}
     lvgl_page_manager
     peripheral_drivers_lib
-    esp32c5_connectivity
     t_panel_p4
 )

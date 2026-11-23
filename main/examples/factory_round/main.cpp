@@ -5,12 +5,12 @@
 #include <freertos/task.h>
 #include <driver/gpio.h>
 #include <lvgl.h>
-#include <bsp/board.hpp>
-#include <bsp/pins.hpp>
+#include <bsp/api/board.hpp>
+#include <bsp/pins/pins.hpp>
 #include <ui/core/lvgl_port.hpp>
 #include <ui/pages/page_registry.hpp>
 #include <lvgl_page_manager.h>
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/slave_c5.hpp>
 #include <services/service_context.hpp>
 
 namespace
@@ -20,9 +20,9 @@ namespace
     struct Application
     {
         bsp::t_panel_p4_round::Board board;
-        connectivity::Esp32c5Connectivity esp32c5;
-        connectivity::Esp32c5ConnectivityConfig esp32c5_config{};
-        connectivity::Esp32c5WifiStationConfig wifi_config{};
+        bsp::Esp32c5Slave esp32c5;
+        bsp::Esp32c5Config esp32c5_config{};
+        bsp::Esp32c5WifiStationConfig wifi_config{};
         bool wifi_config_valid{};
         esp_err_t esp32c5_result{ESP_ERR_INVALID_STATE};
         esp_err_t sd_card_result{ESP_ERR_INVALID_STATE};
@@ -35,7 +35,7 @@ namespace
         app.esp32c5_result = app.esp32c5.initialize(app.esp32c5_config);
         if (app.esp32c5_result == ESP_OK)
         {
-            connectivity::Esp32c5CoprocessorInfo info{};
+            bsp::Esp32c5CoprocessorInfo info{};
             if (app.esp32c5.coprocessorInfo(info) == ESP_OK)
             {
                 ESP_LOGI(
@@ -48,7 +48,7 @@ namespace
             }
 
             const esp_err_t wifi_config_result =
-                connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+                bsp::Esp32c5Slave::makeWifiStationConfig(
                     "LilyGo-AABB", "xinyuandianzi", app.wifi_config);
             if (wifi_config_result == ESP_OK)
             {

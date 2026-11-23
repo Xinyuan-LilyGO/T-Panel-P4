@@ -11,7 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 namespace
 {

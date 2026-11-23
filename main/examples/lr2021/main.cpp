@@ -6,7 +6,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #if T_PANEL_P4_BSP_IS_RECT
 #error "LR2021 example requires standard or round hardware"

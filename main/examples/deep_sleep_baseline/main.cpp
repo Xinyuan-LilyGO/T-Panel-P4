@@ -1,4 +1,4 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <esp_log.h>
 #include <esp_sleep.h>
 
@@ -11,11 +11,6 @@ extern "C" void app_main()
 
     bsp::Board board;
     ESP_ERROR_CHECK(board.initializePower());
-#if T_PANEL_P4_BSP_IS_STANDARD || T_PANEL_P4_BSP_IS_ROUND
-    board.ioExpander();
-#elif T_PANEL_P4_BSP_IS_RECT
-    ESP_LOGI(kTag, "BSP AXP517 initialized; Rect power controls use P4 GPIOs");
-#endif
 
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP_LOGI(kTag, "Entering deep sleep through BSP without a wakeup source; reset or power cycle to restart");

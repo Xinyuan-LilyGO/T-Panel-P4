@@ -1,7 +1,7 @@
 #include "record_audio.h"
 #include "service_context.hpp"
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <cmath>
 #include <atomic>
 #include <algorithm>

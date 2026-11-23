@@ -6,12 +6,12 @@ serial console. It supports the `standard`, `round`, and `rect` hardware
 variants.
 
 All three hardware variants use the same source code. The selected BSP
-provides `<bsp/board.hpp>` and `bsp::Board`, so the example needs no hardware
+provides `<bsp/api/board.hpp>` and `bsp::Board`, so the example needs no hardware
 version conditionals. It obtains the existing AXP517 driver from the BSP
 device collection:
 
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::Board board;
 bsp::T_PANEL_P4_BSP_NAMESPACE::PowerConfig config{};

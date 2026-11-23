@@ -33,9 +33,24 @@ set(BSP_REQUIRES
 # ESP-IDF discovers dependencies in a separate CMake process.
 set(_hardware "$ENV{T_PANEL_P4_BSP_PROFILE}")
 if(_hardware STREQUAL "standard" OR _hardware STREQUAL "round")
-    list(APPEND BSP_SRCS src/lora.cpp src/radiolib_esp_idf_hal.cpp)
-    list(APPEND BSP_REQUIRES esp_driver_spi)
-elseif(NOT _hardware STREQUAL "rect")
+    list(APPEND BSP_SRCS
+        src/lora.cpp
+        src/radiolib_esp_idf_hal.cpp
+        src/slave_c5.cpp
+    )
+    list(APPEND BSP_REQUIRES
+        esp_driver_spi
+        bt
+        esp_event
+        esp_hosted
+        esp_netif
+        esp_wifi
+        esp_wifi_remote
+        nvs_flash
+    )
+elseif(_hardware STREQUAL "rect")
+    list(APPEND BSP_SRCS src/sensor.cpp src/motor.cpp)
+else()
     message(FATAL_ERROR "Unknown T-Panel-P4 BSP profile: '${_hardware}'")
 endif()
 
@@ -47,4 +62,3 @@ idf_component_register(
 )
 
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
-

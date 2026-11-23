@@ -6,10 +6,10 @@
 #include <esp_netif_sntp.h>
 #include <freertos/FreeRTOS.h>
 
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/slave_c5.hpp>
 
-#include <bsp/board.hpp>
-#include <bsp/pins.hpp>
+#include <bsp/api/board.hpp>
+#include <bsp/pins/pins.hpp>
 
 #if T_PANEL_P4_BSP_IS_RECT
 #error "ESP32-C5 example requires standard or round hardware"
@@ -87,10 +87,10 @@ namespace
 extern "C" void app_main()
 {
     bsp::Board board;
-    // The connectivity component needs the BSP to power the ESP32-C5 rail.
+    // The C5 slave API needs the BSP to power the ESP32-C5 rail first.
     ESP_ERROR_CHECK(board.initializePower());
 
-    connectivity::Esp32c5ConnectivityConfig config{};
+    bsp::Esp32c5Config config{};
     config.expected_sdio.clock_gpio =
         bsp::pins::sd2Clock;
     config.expected_sdio.command_gpio =
@@ -106,10 +106,10 @@ extern "C" void app_main()
     config.expected_sdio.enable_gpio =
         bsp::pins::esp32c5Enable;
 
-    connectivity::Esp32c5Connectivity esp32c5;
+    bsp::Esp32c5Slave esp32c5;
     ESP_ERROR_CHECK(esp32c5.initialize(config));
 
-    connectivity::Esp32c5CoprocessorInfo info{};
+    bsp::Esp32c5CoprocessorInfo info{};
     ESP_ERROR_CHECK(esp32c5.coprocessorInfo(info));
     ESP_LOGI(
         kTag,
@@ -121,9 +121,9 @@ extern "C" void app_main()
         info.project_name.data(),
         info.idf_version.data());
 
-    connectivity::Esp32c5WifiStationConfig wifi{};
+    bsp::Esp32c5WifiStationConfig wifi{};
     ESP_ERROR_CHECK(
-        connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+        bsp::Esp32c5Slave::makeWifiStationConfig(
             WIFI_SSID,
             WIFI_PASSWORD,
             wifi));

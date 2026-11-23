@@ -1,4 +1,4 @@
-#include <esp32c5_connectivity/esp32c5_connectivity.hpp>
+#include <bsp/api/slave_c5.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -21,26 +21,26 @@
 #if !defined(CONFIG_ESP_HOSTED_ENABLED) ||             \
     !defined(CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE) || \
     !defined(CONFIG_ESP_HOSTED_CP_TARGET_ESP32C5)
-#error "esp32c5_connectivity requires ESP-Hosted SDIO with ESP32-C5 selected"
+#error "T-Panel-P4 ESP32-C5 support requires ESP-Hosted SDIO with ESP32-C5 selected"
 #endif
 
 namespace
 {
-    constexpr char kTag[] = "esp32c5_conn";
+    constexpr char kTag[] = "t_panel_p4_c5";
     constexpr EventBits_t kWifiConnectedBit = BIT0;
     constexpr EventBits_t kWorkerStoppedBit = BIT1;
     constexpr EventBits_t kWifiScanDoneBit = BIT2;
     constexpr EventBits_t kTransportReadyBit = BIT3;
     constexpr std::uint32_t kWifiScanTimeoutMs = 15000U;
 
-    bool isVersionZero(const connectivity::Esp32c5FirmwareVersion &version) noexcept
+    bool isVersionZero(const bsp::Esp32c5FirmwareVersion &version) noexcept
     {
         return version.major == 0U && version.minor == 0U && version.patch == 0U;
     }
 
     int compareVersions(
-        const connectivity::Esp32c5FirmwareVersion &left,
-        const connectivity::Esp32c5FirmwareVersion &right) noexcept
+        const bsp::Esp32c5FirmwareVersion &left,
+        const bsp::Esp32c5FirmwareVersion &right) noexcept
     {
         if (left.major != right.major)
             return left.major < right.major ? -1 : 1;
@@ -97,11 +97,11 @@ namespace
     };
 }
 
-namespace connectivity
+namespace bsp
 {
-    struct Esp32c5Connectivity::Impl
+    struct Esp32c5Slave::Impl
     {
-        Esp32c5ConnectivityConfig config{};
+        Esp32c5Config config{};
         Esp32c5CoprocessorInfo coprocessor_info{};
         Esp32c5SdioConfig active_sdio{};
         Esp32c5WifiStationConfig station_config{};
@@ -114,8 +114,8 @@ namespace connectivity
         esp_event_handler_instance_t ip_event_instance{};
         esp_netif_t *station_netif{};
 
-        std::atomic<Esp32c5ConnectivityState> state{
-            Esp32c5ConnectivityState::uninitialized};
+        std::atomic<Esp32c5State> state{
+            Esp32c5State::uninitialized};
         std::atomic<int> last_error{ESP_OK};
         std::atomic<bool> initialized{};
         std::atomic<bool> hosted_initialized{};
@@ -203,10 +203,10 @@ namespace connectivity
                 ESP_LOGE(kTag, "operation failed: %s", esp_err_to_name(error));
         }
 
-        void setState(Esp32c5ConnectivityState value) noexcept
+        void setState(Esp32c5State value) noexcept
         {
             state.store(value);
-            ESP_LOGI(kTag, "state=%s", esp32c5ConnectivityStateName(value));
+            ESP_LOGI(kTag, "state=%s", esp32c5StateName(value));
         }
 
         [[nodiscard]] esp_err_t initializeSystemServices() const noexcept
@@ -624,7 +624,7 @@ namespace connectivity
         {
             if (!initialized.load())
                 return ESP_ERR_INVALID_STATE;
-            if (state.load() == Esp32c5ConnectivityState::stopping)
+            if (state.load() == Esp32c5State::stopping)
                 return ESP_ERR_INVALID_STATE;
 
             const bool restore_wifi = wifi_started.load();
@@ -636,8 +636,8 @@ namespace connectivity
                 return ESP_ERR_INVALID_STATE;
             }
 
-            const Esp32c5ConnectivityState previous_state = state.load();
-            setState(Esp32c5ConnectivityState::recovering);
+            const Esp32c5State previous_state = state.load();
+            setState(Esp32c5State::recovering);
             if (restore_bluetooth && config.recovery_hook != nullptr)
             {
                 const esp_err_t hook_result = config.recovery_hook(
@@ -706,12 +706,12 @@ namespace connectivity
             {
                 recovery_count.fetch_add(1U);
                 setError(ESP_OK);
-                setState(Esp32c5ConnectivityState::ready);
+                setState(Esp32c5State::ready);
             }
             else
             {
                 setError(result);
-                setState(Esp32c5ConnectivityState::failed);
+                setState(Esp32c5State::failed);
             }
             return result;
         }
@@ -733,8 +733,8 @@ namespace connectivity
 
                 MutexGuard guard(self.mutex);
                 if (guard.locked() && self.initialized.load() &&
-                    self.state.load() != Esp32c5ConnectivityState::recovering &&
-                    self.state.load() != Esp32c5ConnectivityState::stopping)
+                    self.state.load() != Esp32c5State::recovering &&
+                    self.state.load() != Esp32c5State::stopping)
                 {
                     (void)self.recoverLocked();
                 }
@@ -763,11 +763,11 @@ namespace connectivity
                 self.transport_up.store(false);
                 if (self.events != nullptr)
                     xEventGroupClearBits(self.events, kTransportReadyBit);
-                if (self.state.load() != Esp32c5ConnectivityState::recovering &&
-                    self.state.load() != Esp32c5ConnectivityState::stopping)
+                if (self.state.load() != Esp32c5State::recovering &&
+                    self.state.load() != Esp32c5State::stopping)
                 {
                     self.last_error.store(ESP_FAIL);
-                    self.setState(Esp32c5ConnectivityState::failed);
+                    self.setState(Esp32c5State::failed);
                     self.requestRecovery();
                 }
                 break;
@@ -854,12 +854,12 @@ namespace connectivity
         }
     };
 
-    Esp32c5Connectivity::Esp32c5Connectivity() noexcept
+    Esp32c5Slave::Esp32c5Slave() noexcept
         : impl_(new (std::nothrow) Impl{})
     {
     }
 
-    Esp32c5Connectivity::~Esp32c5Connectivity()
+    Esp32c5Slave::~Esp32c5Slave()
     {
         if (impl_ != nullptr)
         {
@@ -878,8 +878,8 @@ namespace connectivity
         }
     }
 
-    esp_err_t Esp32c5Connectivity::initialize(
-        const Esp32c5ConnectivityConfig &config)
+    esp_err_t Esp32c5Slave::initialize(
+        const Esp32c5Config &config)
     {
         if (impl_ == nullptr)
             return ESP_ERR_NO_MEM;
@@ -908,7 +908,7 @@ namespace connectivity
                 result = ESP_ERR_TIMEOUT;
             else
             {
-                impl_->setState(Esp32c5ConnectivityState::starting);
+                impl_->setState(Esp32c5State::starting);
                 result = impl_->initializeSystemServices();
                 if (result == ESP_OK)
                     result = impl_->registerHostedEvents();
@@ -931,7 +931,7 @@ namespace connectivity
                 {
                     impl_->initialized.store(true);
                     impl_->setError(ESP_OK);
-                    impl_->setState(Esp32c5ConnectivityState::ready);
+                    impl_->setState(Esp32c5State::ready);
                     ESP_LOGI(
                         kTag,
                         "ESP32-C5 connected over SDIO: firmware %lu.%lu.%lu",
@@ -948,7 +948,7 @@ namespace connectivity
                     }
                     impl_->unregisterHostedEvents();
                     impl_->setError(result);
-                    impl_->setState(Esp32c5ConnectivityState::failed);
+                    impl_->setState(Esp32c5State::failed);
                 }
             }
         }
@@ -958,7 +958,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::deinitialize()
+    esp_err_t Esp32c5Slave::deinitialize()
     {
         if (impl_ == nullptr || !impl_->initialized.load())
             return ESP_ERR_INVALID_STATE;
@@ -974,7 +974,7 @@ namespace connectivity
             if (!guard.locked())
                 return ESP_ERR_TIMEOUT;
 
-            impl_->setState(Esp32c5ConnectivityState::stopping);
+            impl_->setState(Esp32c5State::stopping);
             if (impl_->wifi_initialized.load())
                 preserveFirstError(impl_->stopWifiLocked(false), first_error);
             if (impl_->config.enable_heartbeat && impl_->transport_up.load())
@@ -994,13 +994,13 @@ namespace connectivity
             impl_->transport_up.store(false);
             impl_->initialized.store(false);
             impl_->setError(first_error);
-            impl_->setState(Esp32c5ConnectivityState::uninitialized);
+            impl_->setState(Esp32c5State::uninitialized);
         }
         impl_->destroyResources();
         return first_error;
     }
 
-    esp_err_t Esp32c5Connectivity::recover()
+    esp_err_t Esp32c5Slave::recover()
     {
         if (impl_ == nullptr || !impl_->initialized.load())
             return ESP_ERR_INVALID_STATE;
@@ -1008,18 +1008,18 @@ namespace connectivity
         return guard.locked() ? impl_->recoverLocked() : ESP_ERR_TIMEOUT;
     }
 
-    bool Esp32c5Connectivity::isInitialized() const noexcept
+    bool Esp32c5Slave::isInitialized() const noexcept
     {
         return impl_ != nullptr && impl_->initialized.load();
     }
 
-    Esp32c5ConnectivityStatus Esp32c5Connectivity::status() const noexcept
+    Esp32c5Status Esp32c5Slave::status() const noexcept
     {
-        Esp32c5ConnectivityStatus value{};
+        Esp32c5Status value{};
         if (impl_ == nullptr)
         {
             value.last_error = ESP_ERR_NO_MEM;
-            value.state = Esp32c5ConnectivityState::failed;
+            value.state = Esp32c5State::failed;
             return value;
         }
         value.state = impl_->state.load();
@@ -1034,7 +1034,7 @@ namespace connectivity
         return value;
     }
 
-    esp_err_t Esp32c5Connectivity::coprocessorInfo(
+    esp_err_t Esp32c5Slave::coprocessorInfo(
         Esp32c5CoprocessorInfo &info) const noexcept
     {
         if (impl_ == nullptr || !impl_->initialized.load())
@@ -1046,7 +1046,7 @@ namespace connectivity
         return ESP_OK;
     }
 
-    esp_err_t Esp32c5Connectivity::activeSdioConfig(
+    esp_err_t Esp32c5Slave::activeSdioConfig(
         Esp32c5SdioConfig &config) const noexcept
     {
         if (impl_ == nullptr || !impl_->initialized.load())
@@ -1058,11 +1058,11 @@ namespace connectivity
         return ESP_OK;
     }
 
-    esp_err_t Esp32c5Connectivity::startWifiStation(
+    esp_err_t Esp32c5Slave::startWifiStation(
         const Esp32c5WifiStationConfig &config)
     {
         if (impl_ == nullptr || !impl_->initialized.load() ||
-            impl_->state.load() != Esp32c5ConnectivityState::ready)
+            impl_->state.load() != Esp32c5State::ready)
         {
             return ESP_ERR_INVALID_STATE;
         }
@@ -1074,7 +1074,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::stopWifi()
+    esp_err_t Esp32c5Slave::stopWifi()
     {
         if (impl_ == nullptr || !impl_->initialized.load() ||
             !impl_->wifi_initialized.load())
@@ -1089,7 +1089,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::reconfigureWifiStation(
+    esp_err_t Esp32c5Slave::reconfigureWifiStation(
         const Esp32c5WifiStationConfig &wifi_config)
     {
         if (impl_ == nullptr || !impl_->initialized.load() ||
@@ -1132,7 +1132,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::connectWifiStation()
+    esp_err_t Esp32c5Slave::connectWifiStation()
     {
         if (impl_ == nullptr || !impl_->wifi_started.load())
             return ESP_ERR_INVALID_STATE;
@@ -1147,7 +1147,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::disconnectWifiStation()
+    esp_err_t Esp32c5Slave::disconnectWifiStation()
     {
         if (impl_ == nullptr || !impl_->wifi_started.load())
             return ESP_ERR_INVALID_STATE;
@@ -1167,7 +1167,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::waitForWifiConnection(
+    esp_err_t Esp32c5Slave::waitForWifiConnection(
         std::uint32_t timeout_ms) const noexcept
     {
         if (impl_ == nullptr || !impl_->wifi_started.load() || timeout_ms == 0U)
@@ -1183,7 +1183,7 @@ namespace connectivity
         return (bits & kWifiConnectedBit) != 0U ? ESP_OK : ESP_ERR_TIMEOUT;
     }
 
-    esp_err_t Esp32c5Connectivity::scanAccessPoints(
+    esp_err_t Esp32c5Slave::scanAccessPoints(
         wifi_ap_record_t *records,
         std::uint16_t &record_count)
     {
@@ -1244,7 +1244,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::stationAccessPoint(
+    esp_err_t Esp32c5Slave::stationAccessPoint(
         wifi_ap_record_t &record) const
     {
         if (impl_ == nullptr || !impl_->wifi_started.load())
@@ -1259,17 +1259,17 @@ namespace connectivity
         return esp_wifi_sta_get_ap_info(&record);
     }
 
-    esp_netif_t *Esp32c5Connectivity::wifiStationNetif() const noexcept
+    esp_netif_t *Esp32c5Slave::wifiStationNetif() const noexcept
     {
         return impl_ != nullptr && impl_->wifi_started.load()
                    ? impl_->station_netif
                    : nullptr;
     }
 
-    esp_err_t Esp32c5Connectivity::startBluetoothController()
+    esp_err_t Esp32c5Slave::startBluetoothController()
     {
         if (impl_ == nullptr || !impl_->initialized.load() ||
-            impl_->state.load() != Esp32c5ConnectivityState::ready)
+            impl_->state.load() != Esp32c5State::ready)
         {
             return ESP_ERR_INVALID_STATE;
         }
@@ -1281,7 +1281,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::stopBluetoothController(
+    esp_err_t Esp32c5Slave::stopBluetoothController(
         bool release_controller_memory)
     {
         if (impl_ == nullptr || !impl_->bluetooth_initialized.load())
@@ -1295,7 +1295,7 @@ namespace connectivity
         return result;
     }
 
-    esp_err_t Esp32c5Connectivity::makeWifiStationConfig(
+    esp_err_t Esp32c5Slave::makeWifiStationConfig(
         const char *ssid,
         const char *password,
         Esp32c5WifiStationConfig &config) noexcept
@@ -1314,22 +1314,22 @@ namespace connectivity
         return ESP_OK;
     }
 
-    const char *esp32c5ConnectivityStateName(
-        Esp32c5ConnectivityState state) noexcept
+    const char *esp32c5StateName(
+        Esp32c5State state) noexcept
     {
         switch (state)
         {
-        case Esp32c5ConnectivityState::uninitialized:
+        case Esp32c5State::uninitialized:
             return "uninitialized";
-        case Esp32c5ConnectivityState::starting:
+        case Esp32c5State::starting:
             return "starting";
-        case Esp32c5ConnectivityState::ready:
+        case Esp32c5State::ready:
             return "ready";
-        case Esp32c5ConnectivityState::recovering:
+        case Esp32c5State::recovering:
             return "recovering";
-        case Esp32c5ConnectivityState::stopping:
+        case Esp32c5State::stopping:
             return "stopping";
-        case Esp32c5ConnectivityState::failed:
+        case Esp32c5State::failed:
             return "failed";
         }
         return "unknown";

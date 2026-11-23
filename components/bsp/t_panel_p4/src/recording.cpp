@@ -1,4 +1,4 @@
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 #include <array>
 #include <cstring>
@@ -58,11 +58,6 @@ namespace
     std::uint16_t bitsPerSample(bsp::T_PANEL_P4_BSP_NAMESPACE::AudioWordLength word_length) noexcept
     {
         return static_cast<std::uint16_t>(word_length);
-    }
-
-    std::uint16_t channelCount(const bsp::T_PANEL_P4_BSP_NAMESPACE::AudioConfig &config) noexcept
-    {
-        return config.slot_mode == I2S_SLOT_MODE_MONO ? 1U : 2U;
     }
 
     void putLe16(std::uint8_t *destination, std::uint16_t value) noexcept
@@ -307,11 +302,15 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
             config.chunk_bytes > config.ring_buffer_bytes / 2U || config.read_timeout_ms == 0U)
             return ESP_ERR_INVALID_ARG;
 
-        const std::uint16_t channels = channelCount(audio_config_);
+        const std::uint16_t channels = audioCaptureChannelCount();
         const std::uint16_t bits = bitsPerSample(audio_config_.word_length);
         const std::size_t frame_bytes = static_cast<std::size_t>(channels) * bits / 8U;
-        if (frame_bytes == 0U || config.chunk_bytes % frame_bytes != 0U)
+        if (frame_bytes == 0U ||
+            (!audio_config_.enable_aec_reference && config.chunk_bytes % frame_bytes != 0U))
             return ESP_ERR_INVALID_ARG;
+        // Three-channel frames are six bytes; keep the default 4096-byte chunk
+        // usable by rounding down to 4092 instead of splitting a PCM frame.
+        const std::size_t chunk_bytes = config.chunk_bytes - config.chunk_bytes % frame_bytes;
 
 #if !CONFIG_SPIRAM_BOOT_INIT || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
         // Reject old sdkconfig settings before an external stack can assert.
@@ -336,9 +335,9 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         StreamBufferHandle_t stream = createRecordingStream(config.ring_buffer_bytes);
         SemaphoreHandle_t done = xSemaphoreCreateBinary();
         auto *capture_buffer =
-            static_cast<std::uint8_t *>(heap_caps_malloc(config.chunk_bytes, kRecordingMemoryCaps));
+            static_cast<std::uint8_t *>(heap_caps_malloc(chunk_bytes, kRecordingMemoryCaps));
         auto *writer_buffer =
-            static_cast<std::uint8_t *>(heap_caps_malloc(config.chunk_bytes, kRecordingMemoryCaps));
+            static_cast<std::uint8_t *>(heap_caps_malloc(chunk_bytes, kRecordingMemoryCaps));
         if (stream == nullptr || done == nullptr || capture_buffer == nullptr ||
             writer_buffer == nullptr)
         {
@@ -358,7 +357,7 @@ namespace bsp::T_PANEL_P4_BSP_NAMESPACE
         recording_done_ = done;
         recording_capture_buffer_ = capture_buffer;
         recording_writer_buffer_ = writer_buffer;
-        recording_chunk_bytes_ = config.chunk_bytes;
+        recording_chunk_bytes_ = chunk_bytes;
         recording_read_timeout_ms_ = config.read_timeout_ms;
         recording_sample_rate_ = audio_config_.sample_rate_hz;
         recording_channels_ = channels;

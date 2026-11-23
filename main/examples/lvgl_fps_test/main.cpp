@@ -11,12 +11,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <hal/config.h>
 #include <lvgl.h>
 #include <demos/lv_demos.h>
 
 #include <pdl/core/status.hpp>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 namespace
 {
@@ -37,6 +38,19 @@ namespace
     constexpr char kTag[] = "lvgl_fps_test";
     constexpr int kDisplayWidth = Board::displayWidth;
     constexpr int kDisplayHeight = Board::displayHeight;
+#if HAL_CONFIG(CHIP_SUPPORT_MIN_REV) < 300
+    // The pre-v3 DSI bridge shares its input/output RGB format selector.
+    // Match the 24-bit panel output; RGB565 -> RGB888 is not supported.
+    constexpr lcd_color_format_t kFrameBufferFormat = LCD_COLOR_FMT_RGB888;
+    constexpr lv_color_format_t kLvglColorFormat = LV_COLOR_FORMAT_RGB888;
+    constexpr std::size_t kBytesPerPixel = 3;
+    constexpr char kColorFormatName[] = "RGB888";
+#else
+    constexpr lcd_color_format_t kFrameBufferFormat = LCD_COLOR_FMT_RGB565;
+    constexpr lv_color_format_t kLvglColorFormat = LV_COLOR_FORMAT_RGB565;
+    constexpr std::size_t kBytesPerPixel = 2;
+    constexpr char kColorFormatName[] = "RGB565";
+#endif
     constexpr std::uint32_t kTouchTimeoutMs = 5;
     constexpr std::uint32_t kMinimumLoopDelayMs = 1;
     constexpr std::uint32_t kMaximumLoopDelayMs = 10;
@@ -246,7 +260,7 @@ namespace
             "Create display refresh semaphore failed");
 
         lv_display_set_user_data(display, &app);
-        lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
+        lv_display_set_color_format(display, kLvglColorFormat);
 
         void *first_frame_buffer = app.board.frameBuffer(0);
         void *second_frame_buffer = app.board.frameBuffer(1);
@@ -257,7 +271,7 @@ namespace
             kTag,
             "DPI double framebuffers are not available");
 
-        constexpr std::size_t frame_buffer_size = kDisplayWidth * kDisplayHeight * sizeof(std::uint16_t);
+        constexpr std::size_t frame_buffer_size = kDisplayWidth * kDisplayHeight * kBytesPerPixel;
         lv_display_set_buffers(
             display,
             first_frame_buffer,
@@ -298,7 +312,7 @@ extern "C" void app_main(void)
 {
     DisplayConfig display_config{};
     display_config.frame_buffer_count = 2;
-    display_config.in_color_format = LCD_COLOR_FMT_RGB565;
+    display_config.in_color_format = kFrameBufferFormat;
     ESP_ERROR_CHECK(application.board.initializeDisplay(display_config));
     ESP_ERROR_CHECK(application.board.initializeTouch());
     application.touch = application.board.touchController();
@@ -309,12 +323,14 @@ extern "C" void app_main(void)
 
     ESP_LOGI(
         kTag,
-        "LVGL %d.%d.%d benchmark at %dx%d, touch, direct double buffer, PPA, 2 SW draw units",
+        "LVGL %d.%d.%d benchmark at %dx%d, %s, touch, direct double buffer, PPA=%d, 2 SW draw units",
         LVGL_VERSION_MAJOR,
         LVGL_VERSION_MINOR,
         LVGL_VERSION_PATCH,
         kDisplayWidth,
-        kDisplayHeight);
+        kDisplayHeight,
+        kColorFormatName,
+        LV_USE_PPA);
 
     while (true)
     {

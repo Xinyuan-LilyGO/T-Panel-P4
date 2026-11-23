@@ -2,7 +2,7 @@
 #include "page_registry.hpp"
 #include <ui/core/lvgl_port.hpp>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 #include <driver/ppa.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
@@ -527,6 +527,3 @@ void registerCameraPage()
 }
 
 extern "C" void camera_page_register() { factory::ui::registerCameraPage(); }
-
-
-

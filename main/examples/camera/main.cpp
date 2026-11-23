@@ -13,7 +13,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 /**
  * Preview data path:

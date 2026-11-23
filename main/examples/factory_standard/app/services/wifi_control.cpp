@@ -14,14 +14,14 @@
 
 namespace
 {
-    connectivity::Esp32c5Connectivity *radio()
+    bsp::Esp32c5Slave *radio()
     {
         return factory::services::connectivity();
     }
 
-    connectivity::Esp32c5WifiStationConfig &wifi_config()
+    bsp::Esp32c5WifiStationConfig &wifi_config()
     {
-        static connectivity::Esp32c5WifiStationConfig fallback{};
+        static bsp::Esp32c5WifiStationConfig fallback{};
         const auto &context = factory::services::context();
         return context.wifi_config != nullptr ? *context.wifi_config : fallback;
     }
@@ -94,10 +94,10 @@ extern "C" esp_err_t wifi_control_set_enabled(bool enabled)
     if (!enabled)
         return connectivity->stopWifi();
 
-    connectivity::Esp32c5WifiStationConfig config = wifi_config();
+    bsp::Esp32c5WifiStationConfig config = wifi_config();
     if (!wifi_config_valid())
     {
-        const esp_err_t result = connectivity::Esp32c5Connectivity::makeWifiStationConfig(
+        const esp_err_t result = bsp::Esp32c5Slave::makeWifiStationConfig(
             WIFI_SSID, WIFI_PASS, config);
         if (result != ESP_OK)
             return result;
@@ -174,9 +174,9 @@ extern "C" esp_err_t wifi_control_connect(const char *ssid, const char *password
     if (connectivity == nullptr || !connectivity_ready())
         return ESP_ERR_INVALID_STATE;
 
-    connectivity::Esp32c5WifiStationConfig config{};
+    bsp::Esp32c5WifiStationConfig config{};
     const esp_err_t config_result =
-        connectivity::Esp32c5Connectivity::makeWifiStationConfig(ssid, password, config);
+        bsp::Esp32c5Slave::makeWifiStationConfig(ssid, password, config);
     if (config_result != ESP_OK)
         return config_result;
     config.automatic_reconnect = true;

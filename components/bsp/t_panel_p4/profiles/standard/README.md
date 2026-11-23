@@ -30,7 +30,7 @@ The IVO JD9365TX command table is supplied by `peripheral_drivers_lib` through
 ## Basic use
 
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::t_panel_p4_standard::Board board;
 
@@ -49,8 +49,12 @@ An absent device (including a missing SD card) returns an error. Applications
 that need fewer devices, custom settings, or optional-device error handling
 should call the corresponding `initializeXxx()` methods directly, as above.
 
+Pass `false` to `initialize(false)` to skip SD-card initialization while keeping
+the other default peripherals and their rollback behavior. A later call to the
+no-argument `initialize()` can initialize the SD card when it becomes available.
+
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::Board board;
 ESP_ERROR_CHECK(board.initialize()); // All default peripherals; requires an SD card.
@@ -94,12 +98,12 @@ VBUS, fault, and power-status APIs without creating an AXP517 transport.
 
 ## Device access
 
-The build-selected `<bsp/board.hpp>` header provides `bsp::Board` and
+The build-selected `<bsp/api/board.hpp>` header provides `bsp::Board` and
 `bsp::Devices` for applications shared by standard, round, and rect hardware.
 The board-specific header and namespace remain available.
 
 ```cpp
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::Board board;
 ESP_ERROR_CHECK(board.initializePower());
@@ -148,7 +152,7 @@ and dropped frames plus pipeline recovery/error counters.
 
 Additional board controls are available for the speaker amplifier, SD power,
 LoRa power, and touch-controller reset. Pin constants are declared in
-`bsp/pins.hpp`.
+`bsp/pins/pins.hpp`.
 
 ## Power modes
 
@@ -187,9 +191,13 @@ ESP_ERROR_CHECK(board.enterDeepSleep(deep_sleep));
 ```
 
 Before deep sleep, the BSP shuts down all owned peripherals, drives every
-XL9555 pin low, and holds the LCD backlight, ESP32-C5 enable, and I2S output
-pins low. `initializeI2cBus()` releases those GPIO holds after a deep-sleep
-reset.
+XL9555 pin low, and holds the backlight, I2C, I2S outputs, SPI SCK/MOSI,
+LoRa CS/reset, ESP32-C5 enable and the powered-down SD/C5 buses low.
+The selected wakeup GPIO and console pads are excluded; the console uses sleep
+isolation. External outputs (MISO, audio input, IRQ/TE), buttons, USB and memory
+pads are not forced low. I2C external pull-ups still draw current when held low.
+`initializeI2cBus()` releases the holds after a deep-sleep reset; backlight
+initialization releases its own hold after preloading a safe low level.
 
 ## SDK configuration profiles
 
@@ -231,7 +239,7 @@ the SD card, call `initializeSdCard()` directly. The default configuration mount
 ```cpp
 #include <cstdio>
 
-#include <bsp/board.hpp>
+#include <bsp/api/board.hpp>
 
 bsp::t_panel_p4_standard::Board board;
 

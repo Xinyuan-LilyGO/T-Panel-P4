@@ -26,7 +26,7 @@ constexpr std::uint16_t kChargeCurrentMa = 512;
 // Stop the NimBLE host before ESP-Hosted tears down its HCI transport.
 struct RadioPause
 {
-    connectivity::Esp32c5Connectivity *radio{factory::services::connectivity()};
+    bsp::Esp32c5Slave *radio{factory::services::connectivity()};
     bool initialized{radio != nullptr && radio->isInitialized()};
     bool wifi{initialized && radio->status().wifi_started};
     bool ble{bluetooth_control_is_enabled()};
@@ -49,7 +49,7 @@ struct RadioPause
             return ESP_OK;
         esp_err_t result = radio->isInitialized()
                                ? ESP_OK
-                               : radio->initialize(connectivity::Esp32c5ConnectivityConfig{});
+                               : radio->initialize(bsp::Esp32c5Config{});
         const auto &context = factory::services::context();
         if (result == ESP_OK && wifi && !radio->status().wifi_started)
             result = context.wifi_config != nullptr && context.wifi_config_valid != nullptr &&
@@ -428,7 +428,7 @@ extern "C" esp_err_t settings_control_run_check(char *buffer, size_t buffer_size
     failed += passed ? 0U : 1U;
 
     auto *radio = factory::services::connectivity();
-    connectivity::Esp32c5CoprocessorInfo coprocessor_info{};
+    bsp::Esp32c5CoprocessorInfo coprocessor_info{};
     const esp_err_t c5_error = radio != nullptr && radio->isInitialized()
                                    ? radio->coprocessorInfo(coprocessor_info)
                                    : ESP_ERR_INVALID_STATE;
